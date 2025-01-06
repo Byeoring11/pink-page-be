@@ -1,0 +1,3 @@
+class DeudService:
+    def __init__(self):
+        ...
