@@ -5,33 +5,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.middleware import Middleware
 
-from core.middlewares.sqlalchemy import SQLAlchemyMiddleware
-from domain import router
-from core.swagger.router import router as swagger_router
+from app.swagger.router import router as swagger_router
+from app.api.v1.router import api_router
+from app.core.config import settings
+from app.middlewares import SQLAlchemyMiddleware
 
 
-def init_routers(app_: FastAPI) -> None:
-    app_.include_router(swagger_router, prefix="/swagger", tags=["Swagger"])
-    app_.include_router(router)
+def init_routers(_app: FastAPI) -> None:
+    _app.include_router(swagger_router, prefix="/swagger", tags=["Swagger"])
+    _app.include_router(api_router)
 
 
-def init_listeners(app_: FastAPI) -> None:
-    pass
-    # @app_.exception_handler(APIException)
-    # async def custom_exception_handler(request: Request, exc: APIException):
-    #     return JSONResponse(
-    #         status_code=exc.status_code,
-    #         content=dict(
-    #             status=exc.status_code,
-    #             msg=exc.msg,
-    #             msg_code=exc.msg_code,
-    #             detail=exc.detail,
-    #             code=exc.code
-    #         ),
-    #     )
-
-
-def make_middleware() -> List[Middleware]:
+def set_middleware() -> List[Middleware]:
     middlewares = [
         Middleware(
             CORSMiddleware,
@@ -46,22 +31,21 @@ def make_middleware() -> List[Middleware]:
 
 
 def create_app():
-    app_ = FastAPI(
-        title="Pink-page API",
-        description="This is a pink page API server made with FastAPI",
-        version="0.0.1",
+    _app = FastAPI(
+        title=settings.APP_NAME,
+        description=settings.APP_DESC,
+        version=settings.APP_VERSION,
         docs_url=None,
-        middleware=make_middleware(),
+        middleware=set_middleware(),
     )
-    init_routers(app_)
-    init_listeners(app_)
+    init_routers(_app)
 
     # ROOT routing: Swagger로 redirect
-    @app_.get('/')
+    @_app.get('/')
     async def index():
         return RedirectResponse('/swagger/docs')
 
-    return app_
+    return _app
 
 
 app = create_app()
