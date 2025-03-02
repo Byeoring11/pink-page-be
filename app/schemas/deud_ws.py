@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, Literal, Any
+from typing import Optional, Literal, List, Any
 
 
 class WebSocketMessage(BaseModel):
@@ -42,3 +42,4 @@ class TaskStateUpdateMessage(WebSocketMessage):
 class ClientMessage(BaseModel):
     action: str
     serverType: Optional[int] = None
+    cusnoList: Optional[List] = None
