@@ -2,14 +2,14 @@ import asyncio
 from typing import Optional, Any
 from fastapi import WebSocket, Depends
 
-from app.domains.deud.schema import TaskStateUpdateMessage
-from app.services.websocket_service import WebsocketManager
+from app.domains.deud.schema import TaskStateUpdateMessage, TaskErrorMessage, TaskCancelledMessage
+from app.services.websocket_service import WebsocketService, get_websocket_service
 from app.core.logger import logger
 
 
 class TaskStateManager:
     """작업 상태 및 소유권 관리를 위한 클래스"""
-    def __init__(self, websocket_manager: WebsocketManager):
+    def __init__(self, websocket_manager: WebsocketService):
         self._lock = asyncio.Lock()
         self._task_available = True
         self._task_owner: Optional[WebSocket] = None
@@ -55,6 +55,16 @@ class TaskStateManager:
                 logger.info(f"Owner disconnected: {websocket}")
                 await self.release_task_ownership(websocket)
 
+    async def send_task_unavailable_message(self, websocket: WebSocket, server_type: int) -> None:
+        async with self._lock:
+            error_msg = TaskErrorMessage(serverType=server_type, message="Task already running")
+            await self._websocket_manager.send_message(websocket, error_msg)
+
+    async def send_task_cancelled_message(self, websocket: WebSocket, server_type: int) -> None:
+        async with self._lock:
+            cancel_msg = TaskCancelledMessage(serverType=server_type, message="Task cancelled")
+            await self._websocket_manager.send_message(websocket, cancel_msg)
+
 
 class TaskManager:
     """비동기 작업 실행 관리 클래스"""
@@ -77,7 +87,7 @@ class TaskManager:
     async def cancel_current_task(self) -> None:
         """현재 작업 취소"""
         async with self._task_lock:
-            if self._current_task and not self._current_task.done():
+            if self.is_task_running:
                 self._current_task.cancel()
                 try:
                     await self._current_task
@@ -86,14 +96,10 @@ class TaskManager:
 
 
 # 의존성 주입 설정
-def get_websocket_manager() -> WebsocketManager:
-    return WebsocketManager()
-
-
 def get_task_state_manager(
-    ws_manager: WebsocketManager = Depends(get_websocket_manager)
+    websocket_service: WebsocketService = Depends(get_websocket_service)
 ) -> TaskStateManager:
-    return TaskStateManager(ws_manager)
+    return TaskStateManager(websocket_service)
 
 
 def get_task_manager() -> TaskManager:
