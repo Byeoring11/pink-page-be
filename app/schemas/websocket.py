@@ -1,5 +1,5 @@
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class WebSocketMessage(BaseModel):
@@ -9,4 +9,4 @@ class WebSocketMessage(BaseModel):
 class ClientMessage(BaseModel):
     action: str
     serverType: Optional[int] = None
-    cusnoList: Optional[List] = None
+    cusnoList: Optional[List[str]] = Field(default_factory=list)
