@@ -49,8 +49,7 @@ class TaskManager:
 
             # 다른 클라이언트들에게 상태 변경 알림
             await self._websocket_service.broadcast(
-                TaskStateUpdateMessage(state=False),
-                exclude=websocket
+                TaskStateUpdateMessage(state=False)
             )
 
             logger.info(f"Task ownership acquired by client: {id(websocket)}")
@@ -59,7 +58,7 @@ class TaskManager:
     async def release_ownership(self, websocket: WebSocket) -> None:
         """작업 소유권 해제"""
         async with self._state_lock:
-            if self._owner != websocket:
+            if not await self.validate_ownership(websocket):
                 logger.warning(f"Unauthorized release attempt by client: {id(websocket)}")
                 return
 
@@ -78,7 +77,6 @@ class TaskManager:
         return self._owner == websocket
 
     # 작업 실행 API
-
     async def start_task(
         self,
         owner: WebSocket,
@@ -159,6 +157,11 @@ class TaskManager:
             return True
 
     # 클라이언트 상호작용 API
+    async def send_inform_state_message(self, websocket: WebSocket) -> None:
+        """클라이언트에게 현재 task available 상태 메시지 전송"""
+        msg = TaskStateUpdateMessage(state=self.is_available)
+        await self._websocket_service.send_message(websocket, msg)
+
     async def send_error_message(self, websocket: WebSocket, server_type: int, message: str) -> None:
         """오류 메시지 전송"""
         error_msg = TaskErrorMessage(serverType=server_type, message=message)

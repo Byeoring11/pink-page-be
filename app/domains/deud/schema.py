@@ -24,7 +24,6 @@ class TaskStartMessage(WebSocketMessage):
     """작업 시작 메시지"""
     type: Literal[MessageType.TASK_START] = MessageType.TASK_START
     serverType: int
-    totalItems: int
 
 
 class TaskLogMessage(WebSocketMessage):

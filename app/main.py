@@ -6,7 +6,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.middleware import Middleware
 
 from app.swagger.router import router as swagger_router
-from app.api.v1.router import api_router
+from app.api.v1.router import api_router, websocket_router
 from app.core.config import settings
 from app.middlewares import SQLAlchemyMiddleware
 
@@ -14,6 +14,7 @@ from app.middlewares import SQLAlchemyMiddleware
 def init_routers(_app: FastAPI) -> None:
     _app.include_router(swagger_router, prefix="/swagger", tags=["Swagger"])
     _app.include_router(api_router)
+    _app.include_router(websocket_router)
 
 
 def set_middleware() -> List[Middleware]:
