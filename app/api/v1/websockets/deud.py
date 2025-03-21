@@ -1,8 +1,8 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 
-from app.services.websocket_service import WebSocketService
+from app.infrastructures.websocket.services.websocket_service import WebSocketService
 from app.domains.deud.services.task_coordinator import TaskCoordinator
-from app.domains.deud.schema import ActionType
+from app.domains.deud.schemas.deud_schema import ActionType
 from app.core.logger import logger
 from app.api.dependencies import (
     get_websocket_service,
@@ -31,7 +31,7 @@ async def deud_websocket_endpoint(
         while True:
             # 클라이언트 메시지 수신
             client_message = await websocket_service.receive_message(websocket)
-            logger.info(f"Received message: action={client_message.action}, serverType={client_message.serverType}")
+            logger.info(f"Received message: {client_message}")
 
             # 메시지 타입에 따른 처리 라우팅
             if client_message.action == ActionType.START_TASK:

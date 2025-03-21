@@ -3,7 +3,7 @@ from typing import Set, Dict, Optional, Any, Type, TypeVar
 from fastapi import WebSocket
 from pydantic import BaseModel
 
-from app.schemas.websocket import WebSocketMessage, ClientMessage
+from app.infrastructures.websocket.schemas.websocket import WebSocketMessage, ClientMessage
 from app.core.logger import logger
 
 T = TypeVar('T', bound=BaseModel)
@@ -45,6 +45,7 @@ class WebSocketService:
         """단일 클라이언트에 메시지 전송"""
         try:
             await websocket.send_json(message.model_dump())
+            logger.info(f"Success sending message to client {id(websocket)}: {message.model_dump()}")
         except Exception as e:
             logger.error(f"Failed to send message to client {id(websocket)}: {str(e)}")
 

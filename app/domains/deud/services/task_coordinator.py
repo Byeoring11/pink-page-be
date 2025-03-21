@@ -2,9 +2,9 @@ import asyncio
 from typing import List
 from fastapi import WebSocket
 
-from app.domains.deud.schema import TaskLogMessage, TaskCompleteMessage, TaskStartMessage
+from app.domains.deud.schemas.deud_schema import TaskLogMessage, TaskCompleteMessage, TaskStartMessage
 from app.domains.deud.services.task_manager import TaskManager
-from app.services.websocket_service import WebSocketService
+from app.infrastructures.websocket.services.websocket_service import WebSocketService
 from app.core.logger import logger
 
 
@@ -59,7 +59,7 @@ class TaskCoordinator:
         # 작업 시작
         task_start_message = TaskStartMessage(serverType=server_type)
         await self._websocket_service.send_message(websocket, task_start_message)
-        logger.info(f"Starting task for server_type {server_type} with {len(cusno_list)} customers")
+        logger.info(f"Starting task for server_type {server_type} with {cusno_list}")
 
         success = await self._task_manager.start_task(
             websocket,
@@ -113,11 +113,12 @@ class TaskCoordinator:
     ) -> None:
         """
         실제 작업 실행 로직
-
-        (이전 MockService의 로직을 여기로 통합)
         """
         try:
             logger.info(f"Executing task for server_type: {server_type}")
+            #########################################################################################
+            # 테스트 로직 START
+            #########################################################################################
             total_iterations = 5
 
             for i in range(total_iterations):
@@ -139,6 +140,9 @@ class TaskCoordinator:
                     }
                 )
                 await self._websocket_service.send_message(websocket, log_message)
+            #########################################################################################
+            # 테스트 로직 END
+            #########################################################################################
 
             # 작업 완료 메시지 전송
             complete_message = TaskCompleteMessage(serverType=server_type)

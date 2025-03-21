@@ -2,8 +2,8 @@ import asyncio
 from typing import Optional, Any, Callable, Awaitable
 from fastapi import WebSocket
 
-from app.domains.deud.schema import TaskStateUpdateMessage, TaskErrorMessage, TaskCancelledMessage
-from app.services.websocket_service import WebSocketService
+from app.domains.deud.schemas.deud_schema import TaskStateUpdateMessage, TaskErrorMessage, TaskCancelledMessage
+from app.infrastructures.websocket.services.websocket_service import WebSocketService
 from app.core.logger import logger
 
 

@@ -1,7 +1,7 @@
 import asyncio
 from fastapi import WebSocket, Depends
-from app.services.websocket_service import WebsocketService, get_websocket_service
-from app.domains.deud.schema import TaskLogMessage
+from app.infrastructures.websocket.services.websocket_service import WebsocketService, get_websocket_service
+from app.domains.deud.schemas.deud_schema import TaskLogMessage
 from app.core.logger import logger
 
 

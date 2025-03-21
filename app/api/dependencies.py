@@ -1,6 +1,6 @@
 from fastapi import Depends
 
-from app.services.websocket_service import WebSocketService
+from app.infrastructures.websocket.services.websocket_service import WebSocketService
 from app.domains.deud.services.task_manager import TaskManager
 from app.domains.deud.services.task_coordinator import TaskCoordinator
 
