@@ -35,16 +35,16 @@ class SSHClientImpl(SSHClientInterface):
         self._config = config
 
         connect_kwargs = {
-            "hostname": config.credential.host,
-            "port": config.credential.port,
-            "username": config.credential.username,
-            "password": config.credential.password,
+            "hostname": config.host,
+            "port": config.port,
+            "username": config.username,
+            "password": config.password,
             "timeout": config.timeout
         }
 
         for attempt in range(1, config.connection_attempts + 1):
             try:
-                logger.debug(f"Connecting {config.credential.host}:{config.credential.port} {attempt}/{config.connection_attempts}")
+                logger.debug(f"Connecting {config.host}:{config.port} {attempt}/{config.connection_attempts}")
                 self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                 await run_in_executor(self._client.connect, **connect_kwargs)
 
@@ -54,23 +54,23 @@ class SSHClientImpl(SSHClientInterface):
                         transport.set_keepalive(config.keep_alive_interval)
 
                 self._connected = True
-                logger.info(f"SSH Connected to {config.credential.host}:{config.credential.port}")
+                logger.info(f"SSH Connected to {config.host}:{config.port}")
                 return
 
             except paramiko.AuthenticationException as e:
                 raise SSHConnectionError(
-                    host=config.credential.host,
-                    port=config.credential.port,
-                    username=config.credential.username,
+                    host=config.host,
+                    port=config.port,
+                    username=config.username,
                     cause=e
                 )
 
             except (paramiko.SSHException, socket.error) as e:
                 if attempt == config.connection_attempts:
                     raise SSHConnectionError(
-                        host=config.credential.host,
-                        port=config.credential.port,
-                        username=config.credential.username,
+                        host=config.host,
+                        port=config.port,
+                        username=config.username,
                         cause=e,
                         details={"attempt": attempt}
                     )
@@ -82,7 +82,7 @@ class SSHClientImpl(SSHClientInterface):
         if self._client and self._connected:
             await run_in_executor(self._client.close)
             self._connected = False
-            logger.info(f"SSH Disconnected from {self._config.credential.host}:{self._config.credential.port}")
+            logger.info(f"SSH Disconnected from {self._config.host}:{self._config.port}")
 
     async def execute_command(self, command: str, timeout: Optional[int] = None) -> SSHCommandResult:
         """SSH 명령 실행"""

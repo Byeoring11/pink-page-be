@@ -50,7 +50,7 @@ class SSHShellImpl(SSHShellInterface):
             if shell_config:
                 self._shell_config = shell_config
 
-            logger.debug(f"Opening interactive shell to {self._config.credential.host}")
+            logger.debug(f"Opening interactive shell to {self._config.host}")
             self._channel = await run_in_executor(self._client.invoke_shell,
                                                   term=self._shell_config.term,
                                                   width=self._shell_config.width,
@@ -67,14 +67,14 @@ class SSHShellImpl(SSHShellInterface):
             await asyncio.sleep(0.5)  # Give the shell a moment to initialize
             await self._save_initial_prompt()
 
-            logger.info(f"Interactive shell started on {self._config.credential.host}")
+            logger.info(f"Interactive shell started on {self._config.host}")
 
         except paramiko.SSHException as e:
             logger.error(f"Failed to open interactive shell: {str(e)}")
             raise SSHConnectionError(
-                host=self._config.credential.host,
-                port=self._config.credential.port,
-                username=self._config.credential.username,
+                host=self._config.host,
+                port=self._config.port,
+                username=self._config.username,
                 cause=e,
                 details={"operation": "start_shell"}
             )
@@ -280,7 +280,7 @@ class SSHShellImpl(SSHShellInterface):
 
                 # Close channel
                 await run_in_executor(self._channel.close)
-                logger.info(f"Interactive shell closed on {self._config.credential.host}")
+                logger.info(f"Interactive shell closed on {self._config.host}")
             except Exception as e:
                 logger.warning(f"Error while closing shell: {str(e)}")
             finally:

@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     # 하이웨어 설정
     HIWARE_ID: str = Field(...)
     HIWARE_PW: str = Field(...)
+    WDEXGM1P_IP: str = Field(..., env="WDEXGM1P_IP")
+    EDWAP1T_IP: str = Field(..., env="EDWAP1T_IP")
+    MYPAP1D_IP: str = Field(..., env="MYPAP1D_IP")
+    SERVERS: list[str] = []
 
     # 로깅 설정
     LOG_LEVEL: str = "INFO"
@@ -76,3 +80,4 @@ class Settings(BaseSettings):
 
 settings = Settings()
 settings.configure_for_environment()
+settings.SERVERS = ['', settings.WDEXGM1P_IP, settings.EDWAP1T_IP, settings.MYPAP1D_IP]

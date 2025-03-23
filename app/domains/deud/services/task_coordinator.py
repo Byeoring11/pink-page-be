@@ -2,8 +2,9 @@ import asyncio
 from typing import List
 from fastapi import WebSocket
 
-from app.domains.deud.schemas.deud_schema import TaskLogMessage, TaskCompleteMessage, TaskStartMessage
+from app.domains.deud.schemas.deud_schema import TaskCompleteMessage, TaskStartMessage
 from app.domains.deud.services.task_manager import TaskManager
+from app.domains.deud.services.ssh_service import DeudSSHService
 from app.infrastructures.websocket.services.websocket_service import WebSocketService
 from app.core.logger import logger
 
@@ -119,30 +120,18 @@ class TaskCoordinator:
             #########################################################################################
             # 테스트 로직 START
             #########################################################################################
-            total_iterations = 5
-
-            for i in range(total_iterations):
-                # 각 반복에서 취소 확인을 위한 중단점
-                await asyncio.sleep(1)
-
-                # 진행 상황 계산
-                progress = (i + 1) / total_iterations * 100
-                logger.info(f"Task progress for server_type {server_type}: {progress:.1f}%")
-
-                # 클라이언트에게 진행 상황 보고
-                log_message = TaskLogMessage(
-                    serverType=server_type,
-                    value={
-                        "iteration": i + 1,
-                        "progress": progress,
-                        "cusnoCount": len(cusno_list),
-                        "details": f"Processing batch {i + 1} of {total_iterations}"
-                    }
-                )
-                await self._websocket_service.send_message(websocket, log_message)
+            from app.domains.deud.services.mock_service import MockService
+            mock_service = MockService(self._websocket_service)
+            await mock_service.iterate_with_sleep(websocket, server_type, cusno_list)
             #########################################################################################
             # 테스트 로직 END
             #########################################################################################
+            completion_event = asyncio.Event()
+
+            deud_ssh_service = DeudSSHService(self._websocket_service)
+            await deud_ssh_service.execute_task(websocket, server_type, cusno_list, completion_event)
+
+            await completion_event.wait()
 
             # 작업 완료 메시지 전송
             complete_message = TaskCompleteMessage(serverType=server_type)
@@ -156,6 +145,7 @@ class TaskCoordinator:
 
         except asyncio.CancelledError:
             logger.info(f"Task execution cancelled for server_type: {server_type}")
+
             raise
         except Exception as e:
             logger.error(f"Error in task execution for server_type {server_type}: {str(e)}")

@@ -10,9 +10,8 @@ class SSHCredential(BaseModel):
     password: Optional[str] = None
 
 
-class SSHConnectionConfig(BaseModel):
+class SSHConnectionConfig(SSHCredential):
     """SSH 연결 설정 정보를 담는 모델"""
-    credential: SSHCredential
     timeout: int = 10
     keep_alive_interval: int = 60
     connection_attempts: int = 3
