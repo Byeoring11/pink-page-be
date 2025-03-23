@@ -16,3 +16,19 @@ class SSHConnectionConfig(BaseModel):
     timeout: int = 10
     keep_alive_interval: int = 60
     connection_attempts: int = 3
+
+
+class SSHShellTerminalConfig(BaseModel):
+    """SSH Shell 터미널 설정 정보 모델"""
+    term: str = 'vt100'
+    width: int = 120
+    height: int = 24
+    width_pixels: int = 0
+    height_pixels: int = 0
+    environment: Optional[dict] = None
+
+
+class SSHShellConnectionConfig(SSHShellTerminalConfig):
+    """SSH Shell 연결 설정 정보 모델"""
+    read_buffer_size: int = 4096
+    default_timeout: float = 30.0

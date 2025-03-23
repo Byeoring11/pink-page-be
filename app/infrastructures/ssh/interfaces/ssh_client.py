@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional
+
+from app.infrastructures.ssh.interfaces.ssh_shell import SSHShellInterface
 from app.infrastructures.ssh.models.connection import SSHConnectionConfig
 from app.infrastructures.ssh.models.ssh_result import SSHCommandResult
 
@@ -47,4 +49,9 @@ class SSHClientInterface(ABC):
         Returns:
             True: 연결 활성, False: 연결 비활성
         """
+        pass
+
+    @abstractmethod
+    async def create_shell(self) -> SSHShellInterface:
+        """인터랙티브 Shell 생성"""
         pass

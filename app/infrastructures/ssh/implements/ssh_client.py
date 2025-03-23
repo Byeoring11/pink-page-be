@@ -5,6 +5,7 @@ import time
 from typing import Optional
 
 from app.infrastructures.ssh.interfaces.ssh_client import SSHClientInterface
+from app.infrastructures.ssh.implements.ssh_shell import SSHShellImpl
 from app.infrastructures.ssh.models.connection import SSHConnectionConfig
 from app.infrastructures.ssh.models.ssh_result import SSHCommandResult
 from app.infrastructures.ssh.exceptions.ssh_exceptions import SSHConnectionError, SSHCommandError, SSHTimeoutError
@@ -142,3 +143,20 @@ class SSHClientImpl(SSHClientInterface):
             return False
         transport = self._client.get_transport()
         return transport is not None and transport.is_active()
+
+    async def create_shell(self) -> SSHShellImpl:
+        """인터랙티브 Shell 생성
+
+        Returns:
+            SSHShellImpl: SSH 인터랙티브 Shell 인터페이스
+
+        Raises:
+            SSHConnectionError: SSH 연결이 없는 경우
+        """
+        if not self.is_connected():
+            logger.error("SSH is not connected")
+            raise SSHConnectionError("SSH is not connected")
+
+        shell = SSHShellImpl(self._client, self._config)
+        await shell.start_shell()
+        return shell
