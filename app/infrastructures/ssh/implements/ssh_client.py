@@ -144,7 +144,7 @@ class SSHClientImpl(SSHClientInterface):
         transport = self._client.get_transport()
         return transport is not None and transport.is_active()
 
-    async def create_shell(self) -> SSHShellImpl:
+    async def create_shell(self) -> "SSHShellSessionContext":
         """인터랙티브 Shell 생성
 
         Returns:
@@ -159,4 +159,24 @@ class SSHClientImpl(SSHClientInterface):
 
         shell = SSHShellImpl(self._client, self._config)
         await shell.start_shell()
-        return shell
+        return SSHShellSessionContext(shell)
+
+
+class SSHShellSessionContext:
+    """Context manager for SSH shell sessions"""
+    def __init__(self, shell):
+        self._shell = shell
+
+    def __getattr__(self, name):
+        """기존 메소드 호출을 실제 셸 인스턴스로 위임"""
+        return getattr(self._shell, name)
+
+    async def __aenter__(self) -> SSHShellImpl:
+        return self._shell
+
+    async def __aexit__(self, *args):
+        await self._shell.close_shell()
+
+    async def close_shell(self):
+        """기존 코드와의 호환성을 위한 별도 종료 메소드"""
+        await self._shell.close_shell()
