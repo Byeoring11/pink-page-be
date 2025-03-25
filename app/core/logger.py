@@ -10,7 +10,10 @@ def setup_logger():
     formatter = logging.Formatter(settings.LOG_FORMAT)
 
     file_handler = RotatingFileHandler(
-        "logs/app.log", maxBytes=1024 * 1024, backupCount=5
+        "logs/app.log",
+        maxBytes=1024 * 1024,
+        backupCount=5,
+        encoding='utf-8'
     )
     file_handler.setFormatter(formatter)
 

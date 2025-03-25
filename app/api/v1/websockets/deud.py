@@ -2,7 +2,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 
 from app.infrastructures.websocket.services.websocket_service import WebSocketService
 from app.domains.deud.services.task_coordinator import TaskCoordinator
-from app.domains.deud.schemas.deud_schema import ActionType
+from app.domains.deud.schemas.websocket_task_schema import ActionType
 from app.core.logger import logger
 from app.api.dependencies import (
     get_websocket_service,

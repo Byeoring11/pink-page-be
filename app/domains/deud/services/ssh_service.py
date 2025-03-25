@@ -2,7 +2,7 @@ import asyncio
 from fastapi import WebSocket
 from app.infrastructures.websocket.services.websocket_service import WebSocketService
 from app.infrastructures.ssh import SSHClientImpl, SSHConnectionConfig, SSHConnectionError, SSHCommandError
-from app.domains.deud.schemas.deud_schema import TaskLogMessage
+from app.domains.deud.schemas.websocket_task_schema import TaskLogMessage
 from app.core.logger import logger
 from app.core.config import settings
 
@@ -12,7 +12,7 @@ class DeudSSHService:
         self._websocket_service = websocket_service
         self._ssh = SSHClientImpl()
 
-    async def execute_shell_controller(self, websocket: WebSocket, server_type: int, cusno_list: list, event: asyncio.Event):
+    async def execute_shell_controller(self, websocket: WebSocket, server_type: int, cusno_list: list):
         logger.info(f"Starting Deud SSH service for server_type: {server_type}")
 
         ssh_connection_config = SSHConnectionConfig(
@@ -40,12 +40,12 @@ class DeudSSHService:
             shell = await self._ssh.create_shell()
 
             await shell.send_command('wd')
-            _ = await shell.read_output()
+            _, _ = await shell.expect('choice please :')
 
             await shell.send_command('2')
-            _ = await shell._save_initial_prompt()
+            await asyncio.sleep(1)
 
-            command = f"sh vmyp_postgresql_dat_ddts.sh {cusno_list.join(',')}"
+            command = f"vmyp_postgresql_dat_ddts.sh {','.join(cusno_list)}"
             await shell.send_command(command)
 
             complete_output = ""
@@ -82,10 +82,93 @@ class DeudSSHService:
             raise SSHCommandError(cause=e)
 
         finally:
-            await shell.close()
+            await shell.close_shell()
 
-    async def _execute_edwap1t(self, websocket: WebSocket, cusno_list: list):
-        pass
+    async def _execute_edwap1t(self, websocket: WebSocket, server_type: int, cusno_list: list):
+        try:
+            shell = await self._ssh.create_shell()
 
-    async def _execute_mypap1d(self, websocket: WebSocket, cusno_list: list):
-        pass
+            await shell.send_command('2')
+            await asyncio.sleep(1)
+
+            command = "vmyp_postgresql_dat_transfer.sh"
+            await shell.send_command(command)
+
+            complete_output = ""
+            is_command_completed = False
+            start_time = asyncio.get_event_loop().time()
+            async for chunk in shell.read_stream():
+                current_time = asyncio.get_event_loop().time()
+                elapsed = current_time - start_time
+
+                log_message = TaskLogMessage(
+                    serverType=server_type,
+                    value={
+                        "message": chunk
+                    }
+                )
+
+                await self._websocket_service.send_message(websocket, log_message)
+
+                complete_output += chunk
+                if "[SUCC] PostgreSQL load data transfer Process" in chunk:
+                    logger.info(f"edwap1t Shell 실행 완료 (경과 시간: {elapsed:.2f}초)")
+                    is_command_completed = True
+                    break
+
+            if not is_command_completed:
+                raise SSHCommandError("커맨드 정상 종료 실패")
+
+        except SSHCommandError as e:
+            logger.error("edwap1t Shell 실행 실패")
+            raise e
+
+        except Exception as e:
+            logger.error(f"edwap1t Shell 실행 중 오류 발생: {str(e)}")
+            raise SSHCommandError(cause=e)
+
+        finally:
+            await shell.close_shell()
+
+    async def _execute_mypap1d(self, websocket: WebSocket, server_type: int, cusno_list: list):
+        try:
+            shell = await self._ssh.create_shell()
+
+            command = "sh bmyp_postgresql_dat_odst.sh"
+            await shell.send_command(command)
+
+            complete_output = ""
+            is_command_completed = False
+            start_time = asyncio.get_event_loop().time()
+            async for chunk in shell.read_stream():
+                current_time = asyncio.get_event_loop().time()
+                elapsed = current_time - start_time
+
+                log_message = TaskLogMessage(
+                    serverType=server_type,
+                    value={
+                        "message": chunk
+                    }
+                )
+
+                await self._websocket_service.send_message(websocket, log_message)
+
+                complete_output += chunk
+                if "" in chunk:
+                    logger.info(f"mypap1d Shell 실행 완료 (경과 시간: {elapsed:.2f}초)")
+                    is_command_completed = True
+                    break
+
+            if not is_command_completed:
+                raise SSHCommandError("커맨드 정상 종료 실패")
+
+        except SSHCommandError as e:
+            logger.error("mypap1d Shell 실행 실패")
+            raise e
+
+        except Exception as e:
+            logger.error(f"mypap1d Shell 실행 중 오류 발생: {str(e)}")
+            raise SSHCommandError(cause=e)
+
+        finally:
+            await shell.close_shell()

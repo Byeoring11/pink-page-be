@@ -2,7 +2,7 @@ import asyncio
 from typing import List
 from fastapi import WebSocket
 
-from app.domains.deud.schemas.deud_schema import TaskCompleteMessage, TaskStartMessage
+from app.domains.deud.schemas.websocket_task_schema import TaskCompleteMessage, TaskStartMessage
 from app.domains.deud.services.task_manager import TaskManager
 from app.domains.deud.services.ssh_service import DeudSSHService
 from app.infrastructures.websocket.services.websocket_service import WebSocketService
@@ -120,18 +120,14 @@ class TaskCoordinator:
             #########################################################################################
             # 테스트 로직 START
             #########################################################################################
-            from app.domains.deud.services.mock_service import MockService
-            mock_service = MockService(self._websocket_service)
-            await mock_service.iterate_with_sleep(websocket, server_type, cusno_list)
+            # from app.domains.deud.services.mock_service import MockService
+            # mock_service = MockService(self._websocket_service)
+            # await mock_service.iterate_with_sleep(websocket, server_type, cusno_list)
             #########################################################################################
             # 테스트 로직 END
             #########################################################################################
-            completion_event = asyncio.Event()
-
             deud_ssh_service = DeudSSHService(self._websocket_service)
-            await deud_ssh_service.execute_task(websocket, server_type, cusno_list, completion_event)
-
-            await completion_event.wait()
+            await deud_ssh_service.execute_shell_controller(websocket, server_type, cusno_list)
 
             # 작업 완료 메시지 전송
             complete_message = TaskCompleteMessage(serverType=server_type)
