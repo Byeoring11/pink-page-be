@@ -24,10 +24,7 @@ class MockService:
             log_message = TaskLogMessage(
                 serverType=server_type,
                 value={
-                    "iteration": i + 1,
-                    "progress": progress,
-                    "cusnoCount": len(cusno_list),
-                    "details": f"Processing batch {i + 1} of {total_iterations}"
+                    "message": f"Processing batch {i + 1} of {total_iterations}"
                 }
             )
 

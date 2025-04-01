@@ -11,6 +11,7 @@ from app.core.config import settings
 class DeudSSHService:
     SERVER_PROFILES: dict[int, SSHServerCommandProfile] = {
         1: SSHServerCommandProfile(
+            server_type=1,
             name="wdexgm1p",
             setup_steps=[
                 {"command": "wd", "expect": "choice please :"},
@@ -20,6 +21,7 @@ class DeudSSHService:
             success_indicator="[SUCC] PostgreSQL load data unload Process"
         ),
         2: SSHServerCommandProfile(
+            server_type=2,
             name="edwap1t",
             setup_steps=[
                 {"command": "2", "delay": 1.0}
@@ -28,10 +30,11 @@ class DeudSSHService:
             success_indicator="[SUCC] PostgreSQL load data transfer Process"
         ),
         3: SSHServerCommandProfile(
+            server_type=3,
             name="mypap1d",
             setup_steps=[],
             command_builder=lambda _: "sh bmyp_postgresql_dat_odst.sh",
-            success_indicator="[SUCC] PostgreSQL load data odst Process"
+            success_indicator="[SUCC] PostgreSQL load data unload Process"
         )
     }
 
@@ -135,7 +138,7 @@ class DeudSSHService:
         await self._websocket_service.send_message(
             websocket,
             TaskLogMessage(
-                serverType=profile.name,
+                serverType=profile.server_type,
                 value={"message": chunk.strip()}
             )
         )

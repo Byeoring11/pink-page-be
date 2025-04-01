@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 class SSHServerCommandProfile(BaseModel):
     """SSH 서버 커맨드 프로필"""
+    server_type: int
     name: str
     setup_steps: List[Dict[str, object]]
     command_builder: Callable[[List[str]], str]

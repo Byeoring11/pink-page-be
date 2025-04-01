@@ -120,14 +120,14 @@ class TaskCoordinator:
             #########################################################################################
             # 테스트 로직 START
             #########################################################################################
-            # from app.domains.deud.services.mock_service import MockService
-            # mock_service = MockService(self._websocket_service)
-            # await mock_service.iterate_with_sleep(websocket, server_type, cusno_list)
+            from app.domains.deud.services.mock_service import MockService
+            mock_service = MockService(self._websocket_service)
+            await mock_service.iterate_with_sleep(websocket, server_type, cusno_list)
             #########################################################################################
             # 테스트 로직 END
             #########################################################################################
-            deud_ssh_service = DeudSSHService(self._websocket_service)
-            await deud_ssh_service.execute_shell_controller(websocket, server_type, cusno_list)
+            # deud_ssh_service = DeudSSHService(self._websocket_service)
+            # await deud_ssh_service.execute_shell_controller(websocket, server_type, cusno_list)
 
             # 작업 완료 메시지 전송
             complete_message = TaskCompleteMessage(serverType=server_type)
