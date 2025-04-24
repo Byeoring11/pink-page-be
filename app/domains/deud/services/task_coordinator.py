@@ -4,7 +4,6 @@ from fastapi import WebSocket
 
 from app.domains.deud.schemas.websocket_task_schema import TaskCompleteMessage, TaskStartMessage
 from app.domains.deud.services.task_manager import TaskManager
-from app.domains.deud.services.ssh_service import DeudSSHService
 from app.infrastructures.websocket.services.websocket_service import WebSocketService
 from app.core.logger import logger
 

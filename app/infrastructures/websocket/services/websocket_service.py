@@ -8,15 +8,12 @@ from app.core.logger import logger
 
 T = TypeVar('T', bound=BaseModel)
 
-WebSocketEventHandler = Callable[[WebSocket, Any], Any]
-
 
 class WebSocketService:
     def __init__(self):
         self._active_connections: Set[WebSocket] = set()
         self._metadata: Dict[WebSocket, Dict[str, Any]] = {}
         self._lock = asyncio.Lock()
-        self._event_handlers: Dict[str, List[WebSocketEventHandler]] = {}
 
     # 연결 관리 API
     async def connect(self, websocket: WebSocket) -> None:

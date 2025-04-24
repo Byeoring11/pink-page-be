@@ -5,7 +5,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.db.session import set_session_context, reset_session_context, session
 
 
-class SQLAlchemyMiddleware(BaseHTTPMiddleware):
+class SessionContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         session_id = str(uuid4())
         context = set_session_context(session_id=session_id)

@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import Literal, Any, Optional, Dict, Union
-from app.infrastructures.websocket.schemas.websocket import WebSocketMessage
+from app.infrastructures.websocket.schemas.messages import WebSocketMessage
 
 
 class MessageType(str, Enum):
