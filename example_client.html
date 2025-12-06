@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stub SSH WebSocket Test Client</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .form-group { margin: 10px 0; }
+        label { display: block; margin-bottom: 5px; }
+        input, select, textarea { width: 100%; padding: 8px; margin-bottom: 10px; }
+        button { padding: 10px 20px; margin: 5px; }
+        #output { 
+            background: #000; 
+            color: #00ff00; 
+            padding: 15px; 
+            height: 400px; 
+            overflow-y: auto; 
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .status { padding: 10px; margin: 5px 0; }
+        .connected { background: #d4edda; border: 1px solid #c3e6cb; }
+        .disconnected { background: #f8d7da; border: 1px solid #f5c6cb; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 Stub SSH WebSocket Test Client</h1>
+        
+        <div id="connection-status" class="status disconnected">
+            ❌ Disconnected
+        </div>
+        
+        <div class="form-group">
+            <label for="connection-id">Connection ID:</label>
+            <input type="text" id="connection-id" value="test-client-001" placeholder="Enter unique connection ID">
+        </div>
+        
+        <div class="form-group">
+            <button onclick="connect()">🔌 Connect</button>
+            <button onclick="disconnect()">❌ Disconnect</button>
+        </div>
+        
+        <hr>
+        
+        <h2>📤 Send SSH Command</h2>
+        <div class="form-group">
+            <label for="server">Server:</label>
+            <select id="server">
+                <option value="wdexgm1p">WDEXGM1P</option>
+                <option value="edwap1t">EDWAP1T</option>
+                <option value="mypap1d">MYPAP1D</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="command">Command:</label>
+            <input type="text" id="command" value="sh vmyp_postgresql_dat_ddts.sh 707035514" placeholder="Enter SSH command">
+        </div>
+        
+        <div class="form-group">
+            <label for="stop-phrase">Stop Phrase:</label>
+            <input type="text" id="stop-phrase" value="[SUCC] PostgreSQL load data unload Process" placeholder="Enter stop phrase">
+        </div>
+        
+        <div class="form-group">
+            <button onclick="sendSSHCommand()">🚀 Execute SSH Command</button>
+        </div>
+        
+        <hr>
+        
+        <h2>⌨️ Send Input to SSH Session</h2>
+        <div class="form-group">
+            <input type="text" id="ssh-input" placeholder="Enter input for SSH session" onkeypress="handleInputKeypress(event)">
+            <button onclick="sendSSHInput()">📤 Send Input</button>
+        </div>
+        
+        <hr>
+        
+        <h2>📺 Output</h2>
+        <div id="output"></div>
+        <button onclick="clearOutput()">🗑️ Clear Output</button>
+    </div>
+
+    <script>
+        let websocket = null;
+        let connectionId = null;
+        
+        function updateStatus(connected) {
+            const status = document.getElementById('connection-status');
+            if (connected) {
+                status.className = 'status connected';
+                status.innerHTML = '✅ Connected';
+            } else {
+                status.className = 'status disconnected';
+                status.innerHTML = '❌ Disconnected';
+            }
+        }
+        
+        function addOutput(message, type = 'info') {
+            const output = document.getElementById('output');
+            const timestamp = new Date().toLocaleTimeString();
+            
+            let prefix = '';
+            switch(type) {
+                case 'error': prefix = '❌'; break;
+                case 'success': prefix = '✅'; break;
+                case 'warning': prefix = '⚠️'; break;
+                case 'info': prefix = 'ℹ️'; break;
+                default: prefix = '📝';
+            }
+            
+            output.textContent += `[${timestamp}] ${prefix} ${message}\n`;
+            output.scrollTop = output.scrollHeight;
+        }
+        
+        function connect() {
+            connectionId = document.getElementById('connection-id').value;
+            if (!connectionId) {
+                alert('Please enter a connection ID');
+                return;
+            }
+            
+            const wsUrl = `ws://localhost:8000/ws/v1/stub/${connectionId}`;
+            addOutput(`Connecting to: ${wsUrl}`);
+            
+            websocket = new WebSocket(wsUrl);
+            
+            websocket.onopen = function(event) {
+                updateStatus(true);
+                addOutput('WebSocket connection opened', 'success');
+            };
+            
+            websocket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    switch(data.type) {
+                        case 'welcome':
+                            addOutput(`Welcome: ${data.message}`, 'success');
+                            break;
+                        case 'output':
+                            // Raw SSH output - add without timestamp/prefix
+                            const output = document.getElementById('output');
+                            output.textContent += data.data;
+                            output.scrollTop = output.scrollHeight;
+                            break;
+                        case 'status':
+                            addOutput(`Status: ${data.message}`, 'info');
+                            break;
+                        case 'complete':
+                            addOutput(`Complete: ${data.message}`, 'success');
+                            break;
+                        case 'error':
+                            addOutput(`Error: ${data.message}`, 'error');
+                            break;
+                        default:
+                            addOutput(`Unknown message type: ${JSON.stringify(data)}`, 'warning');
+                    }
+                } catch (e) {
+                    addOutput(`Failed to parse message: ${event.data}`, 'error');
+                }
+            };
+            
+            websocket.onerror = function(error) {
+                addOutput(`WebSocket error: ${error}`, 'error');
+                updateStatus(false);
+            };
+            
+            websocket.onclose = function(event) {
+                addOutput(`WebSocket closed: ${event.code} ${event.reason}`, 'warning');
+                updateStatus(false);
+                websocket = null;
+            };
+        }
+        
+        function disconnect() {
+            if (websocket) {
+                websocket.close();
+                websocket = null;
+                updateStatus(false);
+                addOutput('Disconnected', 'warning');
+            }
+        }
+        
+        function sendSSHCommand() {
+            if (!websocket) {
+                alert('Please connect first');
+                return;
+            }
+            
+            const server = document.getElementById('server').value;
+            const command = document.getElementById('command').value;
+            const stopPhrase = document.getElementById('stop-phrase').value;
+            
+            if (!server || !command || !stopPhrase) {
+                alert('Please fill in all fields');
+                return;
+            }
+            
+            const message = {
+                type: 'ssh_command',
+                server: server,
+                command: command,
+                stop_phrase: stopPhrase
+            };
+            
+            websocket.send(JSON.stringify(message));
+            addOutput(`Sent SSH command: ${command} on ${server}`, 'info');
+        }
+        
+        function sendSSHInput() {
+            if (!websocket) {
+                alert('Please connect first');
+                return;
+            }
+            
+            const input = document.getElementById('ssh-input').value;
+            if (!input) return;
+            
+            const message = {
+                type: 'ssh_input',
+                input: input + '\n'
+            };
+            
+            websocket.send(JSON.stringify(message));
+            addOutput(`Sent input: ${input}`, 'info');
+            document.getElementById('ssh-input').value = '';
+        }
+        
+        function handleInputKeypress(event) {
+            if (event.key === 'Enter') {
+                sendSSHInput();
+            }
+        }
+        
+        function clearOutput() {
+            document.getElementById('output').textContent = '';
+        }
+        
+        // Auto-connect on page load for testing
+        window.onload = function() {
+            addOutput('Page loaded. Click Connect to start.', 'info');
+        };
+    </script>
+</body>
+</html>
