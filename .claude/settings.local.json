@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(pip freeze:*)"
+      "Bash(pip freeze:*)",
+      "Bash(uvicorn:*)"
     ],
     "deny": [],
     "ask": []

@@ -1,140 +1,219 @@
+"""STUB Domain SSH Service
+
+Provides interactive shell functionality with real-time output streaming
+and SCP file transfer for the STUB domain.
+"""
+
 import asyncio
-import socket
 import select
-import paramiko
+import time
 from typing import Optional, Callable, Awaitable
+
+from app.infrastructures.ssh import BaseSSHService, get_ssh_config
+from app.infrastructures.ssh.config import get_scp_config, SCPTransferConfig
 from app.core.logger import logger
-from app.core.config import settings
+from app.core.exceptions import (
+    SSHCommandException,
+    SSHConnectionException,
+    SSHSCPException,
+    ErrorCode
+)
 
 
-class StubSSHService:
-    """Interactive SSH shell service based on paramikoTest.txt logic"""
+class StubSSHService(BaseSSHService):
+    """
+    STUB-specific SSH service with interactive shell support.
+
+    Extends BaseSSHService to provide:
+    - PTY-based interactive shell
+    - Real-time output streaming via callbacks
+    - Stop phrase detection for automated command completion
+    """
 
     def __init__(self):
-        self.ssh_client: Optional[paramiko.SSHClient] = None
-        self.transport: Optional[paramiko.Transport] = None
-        self.channel = None
-        self.is_connected = False
+        """Initialize STUB SSH service"""
+        super().__init__()
         self.output_callback: Optional[Callable[[str], Awaitable[None]]] = None
 
     def set_output_callback(self, callback: Callable[[str], Awaitable[None]]):
-        """Set callback function to handle real-time output"""
+        """
+        실시간 출력 결과를 핸들링하는 콜백 함수 세팅
+        Set callback function to handle real-time output.
+
+        Args:
+            callback: Async function that receives output strings
+        """
         self.output_callback = callback
 
-    async def connect(self, host: str, username: str, password: str, port: int = 22) -> bool:
-        """Connect to SSH server with authentication"""
-        try:
-            # TCP connection
-            sock = socket.create_connection((host, port), timeout=10)
-            logger.info("[STEP] TCP connection successful")
+    async def connect_to_server(self, server_name: str) -> bool:
+        """
+        Connect to a configured server by name.
 
-            # Transport initialization
-            self.transport = paramiko.Transport(sock)
-            self.transport.start_client()
-            logger.info("[STEP] KEX completed")
+        Convenience method that loads configuration and connects.
 
-            # Authentication (none -> password fallback)
-            authenticated = False
-            try:
-                self.transport.auth_none(username)
-                if self.transport.is_authenticated():
-                    logger.info("[AUTH] none authentication successful")
-                    authenticated = True
-            except paramiko.AuthenticationException:
-                logger.info("[AUTH] none authentication not available")
-            except Exception as exc:
-                logger.warning(f"[AUTH] none authentication error: {exc}")
+        Args:
+            server_name: Server name (e.g., "mdwap1p", "mypap1d")
 
-            if not authenticated and password:
-                try:
-                    self.transport.auth_password(username, password)
-                    if self.transport.is_authenticated():
-                        logger.info("[AUTH] password authentication successful")
-                        authenticated = True
-                except paramiko.AuthenticationException:
-                    logger.error("[AUTH] password authentication failed")
-                except Exception as exc:
-                    logger.error(f"[AUTH] password authentication error: {exc}")
+        Returns:
+            True if connection successful
 
-            if not authenticated:
-                logger.error("[FAIL] All authentication attempts failed")
-                self.transport.close()
-                return False
+        Raises:
+            SSHException: If server not found
+            SSHConnectionException: If connection fails
+            SSHAuthException: If authentication fails
+        """
+        config = get_ssh_config(server_name)
+        return await self.connect(
+            host=config.host,
+            username=config.username,
+            password=config.password,
+            port=config.port
+        )
 
-            # Reuse SSHClient with authenticated transport
-            self.ssh_client = paramiko.SSHClient()
-            self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            self.ssh_client._transport = self.transport
+    async def start_interactive_shell(
+        self,
+        command: str,
+        stop_phrase: str,
+        recv_timeout: float = 0.1,
+        throttle_interval: float = 0.1
+    ) -> None:
+        """
+        인터랙티브 셸을 시작하고 실시간 스트리밍으로 커맨드를 실행
 
-            self.is_connected = True
-            return True
+        1. PTY 기반 대화형 셸(인터랙티브 셸)을 연다
+        2. 명령어를 전송한다
+        3. 콜백을 통해 실시간으로 출력을 스트리밍한다
+        4. 실행을 종료할 종료 구문을 감지한다
+        5. 셸을 자동으로 종료한다
 
-        except Exception as e:
-            logger.error(f"SSH connection failed: {e}")
-            return False
+        Args:
+            command: 실행할 명령어
+            stop_phrase: 출력에서 감지하여 중지할 구문
+            recv_timeout: non-blocking read 시 수신 시간 제한 (default: 0.1s)
+            throttle_interval: 출력 전송 간격 (초 단위, default: 0.1s)
+                              진행률 표시줄 같은 빈번한 업데이트를 제한하기 위함
 
-    async def start_interactive_shell(self, command: str, stop_phrase: str, recv_timeout: float = 0.1) -> None:
-        """Start interactive shell and execute command with real-time streaming"""
-        if not self.is_connected or not self.ssh_client:
-            raise Exception("SSH not connected")
+        Raises:
+            SSHConnectionException: 연결 실패 시
+            SSHCommandException: 셸 명령어 실행 실패 시
+        """
+        if not self.is_connected or not self.transport:
+            raise SSHConnectionException(
+                error_code=ErrorCode.SSH_NOT_CONNECTED,
+                detail="Not connected to SSH server"
+            )
 
         try:
             # Open PTY shell
             self.channel = self.transport.open_session()
             self.channel.get_pty()
             self.channel.invoke_shell()
-            logger.info("[INFO] Interactive shell opened")
+            logger.info("[STUB-SSH] Interactive shell opened")
 
-            # Clear login buffer
+            # Clear login buffer (wait for shell to initialize)
             await asyncio.sleep(0.3)
             while self.channel.recv_ready():
                 self.channel.recv(1024)
 
             # Send command
             self.channel.send(command + "\n")
-            logger.info(f"[CMD] {command}")
+            logger.info(f"[STUB-SSH] Command sent: {command}")
 
             if self.output_callback:
                 await self.output_callback(f"[CMD] {command}\n")
 
-            # Real-time output streaming
-            await self._stream_output(stop_phrase, recv_timeout)
+            # Real-time output streaming with throttling
+            await self._stream_output(stop_phrase, recv_timeout, throttle_interval)
 
         except Exception as e:
-            logger.error(f"Interactive shell error: {e}")
-            raise
+            logger.error(f"[STUB-SSH] Interactive shell error: {e}")
+            raise SSHCommandException(
+                command=command,
+                detail=f"Interactive shell execution failed: {str(e)}",
+                original_exception=e
+            )
 
-    async def _stream_output(self, stop_phrase: str, recv_timeout: float) -> None:
-        """Stream output in real-time and check for stop phrase"""
+    async def _stream_output(
+        self,
+        stop_phrase: str,
+        recv_timeout: float,
+        throttle_interval: float
+    ) -> None:
+        """
+        실시간으로 출력을 스트리밍하고 종료 구문을 체크한다
+
+        비동기 함수와 함께 동작하는 select()를 사용하므로써 non-blocking I/O를 사용
+        Throttling을 통해 진행률 표시줄 같은 빈번한 업데이트로 인한 과도한 전송을 방지
+
+        Args:
+            stop_phrase: Phrase to detect to stop streaming
+            recv_timeout: Timeout for select() call
+            throttle_interval: Minimum interval between output transmissions (seconds)
+        """
         partial_line = b""
+        output_buffer = ""  # 출력 버퍼
+        last_send_time = 0.0  # 마지막 전송 시간
+        current_line_buffer = ""  # 캐리지 리턴(\r)으로 업데이트되는 현재 줄 버퍼
+
+        async def flush_buffer():
+            """버퍼에 쌓인 출력을 클라이언트로 전송"""
+            nonlocal output_buffer, current_line_buffer, last_send_time
+            if output_buffer and self.output_callback:
+                try:
+                    await self.output_callback(output_buffer)
+                    output_buffer = ""
+                    current_line_buffer = ""
+                    last_send_time = time.time()
+                except Exception as e:
+                    logger.error(f"[STUB-SSH] Error in output callback: {e}")
 
         while True:
             # Check if channel is closed
             if self.channel.closed:
-                logger.warning("[WARN] Server closed channel")
+                logger.warning("[STUB-SSH] Server closed channel")
+                await flush_buffer()  # 남은 버퍼 전송
                 if self.output_callback:
                     await self.output_callback("[WARN] Server closed channel\n")
                 break
 
-            # Non-blocking receive using select
+            # select를 이용하여 Non-blocking 수신 구현
             rlist, _, _ = select.select([self.channel], [], [], recv_timeout)
             if self.channel not in rlist:
+                # 데이터가 없을 때, throttle_interval이 지났으면 버퍼 전송
+                current_time = time.time()
+                if output_buffer and (current_time - last_send_time) >= throttle_interval:
+                    await flush_buffer()
+                await asyncio.sleep(0)  # Yield to event loop
                 continue
 
+            # Receive data
             data = self.channel.recv(4096)
             if not data:  # EOF
-                logger.info("[INFO] Server sent EOF")
+                logger.info("[STUB-SSH] Server sent EOF")
+                await flush_buffer()  # 남은 버퍼 전송
                 if self.output_callback:
                     await self.output_callback("[INFO] Server sent EOF\n")
                 break
 
-            # Send raw output to callback
-            if self.output_callback:
-                try:
-                    decoded_data = data.decode('utf-8', errors='replace')
-                    await self.output_callback(decoded_data)
-                except Exception as e:
-                    logger.error(f"Error in output callback: {e}")
+            # Decode received data
+            decoded_data = data.decode('utf-8', errors='replace')
+
+            # 캐리지 리턴(\r) 처리: 진행률 표시줄 같은 경우
+            if '\r' in decoded_data and '\n' not in decoded_data:
+                # 같은 줄을 업데이트하는 경우 (예: 진행률 표시)
+                # 이전 current_line_buffer를 새 내용으로 교체
+                lines = decoded_data.split('\r')
+                current_line_buffer = lines[-1]  # 마지막 업데이트만 유지
+                output_buffer = current_line_buffer  # 버퍼를 현재 줄로 교체
+            else:
+                # 일반적인 출력 (줄바꿈 포함)
+                output_buffer += decoded_data
+                current_line_buffer = ""
+
+            # Throttle: 일정 시간이 지나면 전송
+            current_time = time.time()
+            if (current_time - last_send_time) >= throttle_interval:
+                await flush_buffer()
 
             # Check for stop phrase line by line
             partial_line += data
@@ -143,59 +222,185 @@ class StubSSHService:
                 partial_line = lines.pop()  # Keep incomplete last fragment
 
                 for raw in lines:
-                    # Remove ANSI escape codes and check for stop phrase
+                    # Decode and clean line
                     txt = raw.decode(errors="replace")
                     txt = txt.replace('\r', '')  # Remove Windows-style CR
 
+                    # Check for stop phrase
                     if stop_phrase in txt:
-                        logger.info(f"[INFO] Stop phrase found -> {stop_phrase}")
+                        logger.info(f"[STUB-SSH] Stop phrase detected: {stop_phrase}")
+
+                        # 버퍼에 남은 내용 즉시 전송
+                        await flush_buffer()
+
                         if self.output_callback:
-                            await self.output_callback(f"\n[INFO] Stop phrase found -> {stop_phrase}\n")
+                            await self.output_callback(
+                                f"\n[INFO] Stop phrase detected -> {stop_phrase}\n"
+                            )
 
                         # Send exit command and drain remaining output
                         self.channel.send("exit\n")
+                        await asyncio.sleep(0.1)  # Give time for exit to process
+
+                        # Drain remaining output
+                        remaining_buffer = ""
                         while self.channel.recv_ready():
                             remaining_data = self.channel.recv(4096)
-                            if self.output_callback:
-                                try:
-                                    decoded_remaining = remaining_data.decode('utf-8', errors='replace')
-                                    await self.output_callback(decoded_remaining)
-                                except Exception as e:
-                                    logger.error(f"Error in final output callback: {e}")
+                            remaining_buffer += remaining_data.decode('utf-8', errors='replace')
+
+                        # 남은 출력 전송
+                        if remaining_buffer and self.output_callback:
+                            try:
+                                await self.output_callback(remaining_buffer)
+                            except Exception as e:
+                                logger.error(f"[STUB-SSH] Error in final output callback: {e}")
 
                         self.channel.close()
+                        logger.info("[STUB-SSH] Interactive shell closed (stop phrase)")
                         return
 
-        self.channel.close()
-        logger.info("[INFO] Interactive shell loop ended")
+        # 루프 종료 전 남은 버퍼 전송
+        await flush_buffer()
+
+        # Close channel if not already closed
+        if not self.channel.closed:
+            self.channel.close()
+        logger.info("[STUB-SSH] Interactive shell loop ended")
 
     async def send_input(self, text: str) -> None:
-        """Send input to the interactive shell"""
-        if self.channel and not self.channel.closed:
-            self.channel.send(text)
-            logger.info(f"[INPUT] {text.strip()}")
+        """
+        대화형 셸에 커맨드를 발신
 
-    async def disconnect(self) -> None:
-        """Disconnect SSH connection"""
+        Args:
+            text: Text to send to the shell
+
+        Raises:
+            SSHCommandException: If channel is closed or not available
+        """
+        if not self.channel or self.channel.closed:
+            raise SSHCommandException(
+                error_code=ErrorCode.SSH_CHANNEL_ERROR,
+                detail="Channel not available or closed"
+            )
+
         try:
-            if self.channel and not self.channel.closed:
-                self.channel.close()
-            if self.ssh_client:
-                self.ssh_client.close()
-            self.is_connected = False
-            logger.info("[INFO] SSH connection closed")
+            self.channel.send(text)
+            logger.info(f"[STUB-SSH] Input sent: {text.strip()}")
         except Exception as e:
-            logger.error(f"Error during disconnect: {e}")
+            logger.error(f"[STUB-SSH] Error sending input: {e}")
+            raise SSHCommandException(
+                detail=f"Failed to send input: {str(e)}",
+                original_exception=e
+            )
 
-    def get_server_config(self, server_name: str) -> tuple[str, str, str]:
-        """Get server configuration from settings"""
-        server_configs = {
-            "wdexgm1p": (settings.WDEXGM1P_IP, settings.HIWARE_ID, settings.HIWARE_PW),
-            "edwap1t": (settings.EDWAP1T_IP, settings.HIWARE_ID, settings.HIWARE_PW),
-            "mypap1d": (settings.MYPAP1D_IP, settings.HIWARE_ID, settings.HIWARE_PW),
-        }
+    async def scp_transfer(
+        self,
+        transfer_name: str = "stub_data_transfer",
+        output_callback: Optional[Callable[[str], Awaitable[None]]] = None
+    ) -> bool:
+        """
+        SCP 파일 전송 수행
+        설정된 경로로 원격 서버 간 파일 전송
 
-        if server_name.lower() in server_configs:
-            return server_configs[server_name.lower()]
-        else:
-            raise ValueError(f"Unknown server: {server_name}")
+        Args:
+            transfer_name: SCP transfer configuration name (default: "stub_data_transfer")
+            output_callback: 실시간 출력을 받을 콜백 함수 (선택사항)
+
+        Returns:
+            True if transfer successful, False otherwise
+
+        Raises:
+            SSHException: If configuration not found
+            SSHCommandException: If SCP transfer fails
+        """
+        try:
+            # SCP 설정 가져오기
+            scp_config = get_scp_config(transfer_name)
+            logger.info(f"[STUB-SCP] Starting transfer: {scp_config.description}")
+
+            # 소스 및 대상 서버 설정 가져오기
+            src_server_config = get_ssh_config(scp_config.src_server)
+            dst_server_config = get_ssh_config(scp_config.dst_server)
+
+            # SCP URL 생성
+            src_url = scp_config.get_src_url(
+                src_server_config.username,
+                src_server_config.host
+            )
+            dst_url = scp_config.get_dst_url(
+                dst_server_config.username,
+                dst_server_config.host
+            )
+
+            logger.info(f"[STUB-SCP] Transfer: {src_url} → {dst_url}")
+
+            # SCP 명령 구성
+            scp_opts = [
+                "-P", str(src_server_config.port),
+                "-o", "StrictHostKeyChecking=no",
+                "-r"  # 디렉토리 전송 지원
+            ]
+
+            # sshpass를 사용한 비밀번호 인증
+            # 참고: 소스와 대상 서버의 비밀번호가 같다고 가정
+            cmd = [
+                "sshpass", "-p", src_server_config.password,
+                "scp"
+            ] + scp_opts + [src_url, dst_url]
+
+            logger.info(f"[STUB-SCP] Executing SCP command")
+
+            # 비동기 프로세스 실행
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT
+            )
+
+            # 실시간 출력 스트리밍
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+
+                output = line.decode('utf-8', errors='replace')
+                logger.debug(f"[STUB-SCP] {output.strip()}")
+
+                if output_callback:
+                    await output_callback(output)
+
+            # 프로세스 종료 대기
+            await process.wait()
+
+            if process.returncode == 0:
+                logger.info(f"[STUB-SCP] Transfer completed successfully")
+                return True
+            else:
+                logger.error(f"[STUB-SCP] Transfer failed with exit code {process.returncode}")
+                raise SSHSCPException(
+                    transfer_name=transfer_name,
+                    src=src_url,
+                    dst=dst_url,
+                    detail=f"Transfer failed with exit code {process.returncode}",
+                    error_code=ErrorCode.SSH_SCP_TRANSFER_FAILED
+                )
+
+        except FileNotFoundError as e:
+            logger.error(f"[STUB-SCP] sshpass or scp command not found")
+            raise SSHSCPException(
+                transfer_name=transfer_name,
+                detail="sshpass or scp command not found. Please install sshpass on the server.",
+                error_code=ErrorCode.SSH_SCP_COMMAND_NOT_FOUND,
+                original_exception=e
+            )
+        except SSHSCPException:
+            # SSHSCPException은 그대로 re-raise
+            raise
+        except Exception as e:
+            logger.error(f"[STUB-SCP] Error during transfer: {e}")
+            raise SSHSCPException(
+                transfer_name=transfer_name,
+                detail=f"Unexpected error: {str(e)}",
+                error_code=ErrorCode.SSH_SCP_TRANSFER_FAILED,
+                original_exception=e
+            )

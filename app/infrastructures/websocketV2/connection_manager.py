@@ -3,6 +3,7 @@ import json
 from typing import Dict, Any, Optional, Callable, Awaitable
 from fastapi import WebSocket, WebSocketDisconnect
 from app.core.logger import logger
+from app.core.exceptions import WSBroadcastException, ErrorCode
 
 
 class WebSocketManager:
@@ -50,7 +51,7 @@ class WebSocketManager:
             return False
 
     async def send_json(self, connection_id: str, data: Dict[str, Any]) -> bool:
-        """Send JSON message to specific connection"""
+        """특정 웹소켓 연결에게 json 형식의 메세지 발신"""
         if connection_id not in self.connections:
             logger.warning(f"Connection not found: {connection_id}")
             return False
@@ -121,6 +122,76 @@ class WebSocketManager:
     def get_connection_ids(self) -> list[str]:
         """Get all active connection IDs"""
         return list(self.connections.keys())
+
+    async def broadcast_json(
+        self,
+        data: Dict[str, Any],
+        exclude_ids: Optional[list[str]] = None,
+        raise_on_failure: bool = False
+    ) -> int:
+        """
+        모든 연결된 클라이언트에게 JSON 메시지를 브로드캐스트
+
+        Args:
+            data: 전송할 JSON 데이터
+            exclude_ids: 제외할 connection_id 리스트 (선택사항)
+            raise_on_failure: 실패 시 예외 발생 여부 (기본: False)
+
+        Returns:
+            성공적으로 전송된 클라이언트 수
+
+        Raises:
+            WSBroadcastException: raise_on_failure=True이고 전송 실패 시
+        """
+        exclude_ids = exclude_ids or []
+        success_count = 0
+        failed_connections = []
+
+        async with self._lock:
+            connection_ids = list(self.connections.keys())
+
+        total_targets = len([cid for cid in connection_ids if cid not in exclude_ids])
+
+        for connection_id in connection_ids:
+            if connection_id in exclude_ids:
+                continue
+
+            if await self.send_json(connection_id, data):
+                success_count += 1
+            else:
+                failed_connections.append(connection_id)
+
+        # 에러 처리
+        if failed_connections:
+            logger.warning(
+                f"Broadcast partially failed: {len(failed_connections)}/{total_targets} failed",
+                extra={
+                    "failed_connections": failed_connections,
+                    "success_count": success_count,
+                    "total_targets": total_targets
+                }
+            )
+
+            if raise_on_failure:
+                if success_count == 0:
+                    # 모두 실패
+                    raise WSBroadcastException(
+                        total_connections=total_targets,
+                        failed_connections=len(failed_connections),
+                        detail=f"Broadcast failed to all {total_targets} connections",
+                        error_code=ErrorCode.WS_BROADCAST_FAILED
+                    )
+                else:
+                    # 부분 실패
+                    raise WSBroadcastException(
+                        total_connections=total_targets,
+                        failed_connections=len(failed_connections),
+                        detail=f"Broadcast partially failed: {len(failed_connections)}/{total_targets} connections failed",
+                        error_code=ErrorCode.WS_BROADCAST_PARTIAL
+                    )
+
+        logger.info(f"Broadcast sent to {success_count}/{total_targets} connections")
+        return success_count
 
 
 class WebSocketHandler:

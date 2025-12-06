@@ -51,13 +51,8 @@ class Settings(BaseSettings):
     # 하이웨어 설정
     HIWARE_ID: str = Field(...)
     HIWARE_PW: str = Field(...)
-    WDEXGM1P_IP: str = Field(...)
-    EDWAP1T_IP: str = Field(...)
+    MDWAP1P_IP: str = Field(...)
     MYPAP1D_IP: str = Field(...)
-
-    @property
-    def SERVERS(self) -> list[str]:
-        return ['', self.WDEXGM1P_IP, self.EDWAP1T_IP, self.MYPAP1D_IP]
 
     # 환경별 설정값 조정
     def configure_for_environment(self):
