@@ -66,7 +66,7 @@ class SSHConfigManager:
             "mdwap1p": SSHServerConfig(
                 name="mdwap1p",
                 host=settings.MDWAP1P_IP,
-                port=22,
+                port=settings.MDWAP1P_PORT,
                 username=settings.HIWARE_ID,
                 password=settings.HIWARE_PW,
                 description="MDWAP1P HIWARE Server"
@@ -74,7 +74,7 @@ class SSHConfigManager:
             "mypap1d": SSHServerConfig(
                 name="mypap1d",
                 host=settings.MYPAP1D_IP,
-                port=22,
+                port=settings.MYPAP1D_PORT,
                 username=settings.HIWARE_ID,
                 password=settings.HIWARE_PW,
                 description="MYPAP1D HIWARE Server"
@@ -82,6 +82,7 @@ class SSHConfigManager:
         }
 
         # SCP transfer configurations
+        # 개발 환경과 운영 환경 모두 동일한 경로 사용
         cls._SCP_TRANSFERS = {
             "stub_data_transfer": SCPTransferConfig(
                 name="stub_data_transfer",

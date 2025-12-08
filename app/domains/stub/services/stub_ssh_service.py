@@ -7,10 +7,13 @@ and SCP file transfer for the STUB domain.
 import asyncio
 import select
 import time
+import shutil
+from pathlib import Path
 from typing import Optional, Callable, Awaitable
 
 from app.infrastructures.ssh import BaseSSHService, get_ssh_config
 from app.infrastructures.ssh.config import get_scp_config, SCPTransferConfig
+from app.core.config import settings
 from app.core.logger import logger
 from app.core.exceptions import (
     SSHCommandException,
@@ -120,11 +123,17 @@ class StubSSHService(BaseSSHService):
             logger.info(f"[STUB-SSH] Command sent: {command}")
 
             if self.output_callback:
-                await self.output_callback(f"[CMD] {command}\n")
+                await self.output_callback(f"[호출한 명령어] {command}\n")
 
             # Real-time output streaming with throttling
             await self._stream_output(stop_phrase, recv_timeout, throttle_interval)
 
+        except asyncio.CancelledError:
+            # Task 취소 시 채널 정리 후 re-raise
+            logger.info(f"[STUB-SSH] Interactive shell cancelled")
+            if self.channel and not self.channel.closed:
+                self.channel.close()
+            raise  # CancelledError는 반드시 re-raise
         except Exception as e:
             logger.error(f"[STUB-SSH] Interactive shell error: {e}")
             raise SSHCommandException(
@@ -235,7 +244,7 @@ class StubSSHService(BaseSSHService):
 
                         if self.output_callback:
                             await self.output_callback(
-                                f"\n[INFO] Stop phrase detected -> {stop_phrase}\n"
+                                f"\n[INFO] 셸 완료 구문 감지 확인 -> {stop_phrase}\n"
                             )
 
                         # Send exit command and drain remaining output
@@ -302,6 +311,8 @@ class StubSSHService(BaseSSHService):
         SCP 파일 전송 수행
         설정된 경로로 원격 서버 간 파일 전송
 
+        개발 환경에서는 호스트 파일 시스템을 통해 직접 복사합니다.
+
         Args:
             transfer_name: SCP transfer configuration name (default: "stub_data_transfer")
             output_callback: 실시간 출력을 받을 콜백 함수 (선택사항)
@@ -318,6 +329,118 @@ class StubSSHService(BaseSSHService):
             scp_config = get_scp_config(transfer_name)
             logger.info(f"[STUB-SCP] Starting transfer: {scp_config.description}")
 
+            # 개발 환경: 호스트 파일 시스템을 통해 직접 복사
+            if settings.ENV == "development":
+                return await self._transfer_via_filesystem(scp_config, output_callback)
+
+            # 운영 환경: SCP를 사용하여 전송
+            return await self._transfer_via_scp(scp_config, output_callback)
+
+        except SSHSCPException:
+            # SSHSCPException은 그대로 re-raise
+            raise
+        except Exception as e:
+            logger.error(f"[STUB-SCP] Error during transfer: {e}")
+            raise SSHSCPException(
+                transfer_name=transfer_name,
+                detail=f"Unexpected error: {str(e)}",
+                error_code=ErrorCode.SSH_SCP_TRANSFER_FAILED,
+                original_exception=e
+            )
+
+    async def _transfer_via_filesystem(
+        self,
+        scp_config: SCPTransferConfig,
+        output_callback: Optional[Callable[[str], Awaitable[None]]] = None
+    ) -> bool:
+        """
+        개발 환경: 호스트 파일 시스템을 통해 파일 복사
+        """
+        try:
+            # 경로 매핑 (컨테이너 경로 → 호스트 경로)
+            # __file__: .../pp-backend-fastapi/app/domains/stub/services/stub_ssh_service.py
+            base_dir = Path(__file__).parent.parent.parent.parent.parent  # pp-backend-fastapi/
+
+            # 소스 경로 변환 (문자열로 처리)
+            src_path_str = scp_config.src_path.replace('/nbsftp/', 'test-data/mdwap1p/nbsftp/')
+
+            # 대상 경로 변환 (문자열로 처리)
+            dst_path_str = scp_config.dst_path.replace('/shbftp/', 'test-data/mypap1d/shbftp/')
+            dst_dir = base_dir / dst_path_str
+
+            logger.info(f"[STUB-SCP] Base directory: {base_dir}")
+            logger.info(f"[STUB-SCP] Source pattern: {src_path_str}")
+            logger.info(f"[STUB-SCP] Destination directory: {dst_dir}")
+
+            if output_callback:
+                await output_callback(f"[INFO] Starting file transfer...\n")
+                await output_callback(f"[INFO] Source: {src_path_str}\n")
+                await output_callback(f"[INFO] Destination: {dst_dir}\n")
+
+            # 대상 디렉토리 생성
+            dst_dir.mkdir(parents=True, exist_ok=True)
+
+            # 파일 복사 (glob 패턴 사용)
+            # src_path_str이 "test-data/.../postgresql_unload/*.dat" 형태
+            if '*' in src_path_str:
+                # 패턴에서 디렉토리와 파일 패턴 분리
+                parts = src_path_str.rsplit('/', 1)
+                src_dir_str = parts[0]
+                file_pattern = parts[1] if len(parts) > 1 else '*'
+
+                src_dir = base_dir / src_dir_str
+                src_files = list(src_dir.glob(file_pattern))
+            else:
+                # 와일드카드가 없으면 단일 파일
+                src_files = [base_dir / src_path_str]
+
+            logger.info(f"[STUB-SCP] Found {len(src_files)} files to transfer")
+
+            if not src_files:
+                logger.warning(f"[STUB-SCP] No files found matching pattern")
+                if output_callback:
+                    await output_callback("[WARN] No files found to transfer\n")
+                return False
+
+            transferred_count = 0
+            for src_file in src_files:
+                if not src_file.exists():
+                    logger.warning(f"[STUB-SCP] File not found: {src_file}")
+                    continue
+
+                dst_file = dst_dir / src_file.name
+                shutil.copy2(src_file, dst_file)
+                transferred_count += 1
+                logger.info(f"[STUB-SCP] Copied: {src_file.name} ({src_file.stat().st_size} bytes)")
+
+                if output_callback:
+                    await output_callback(f"[INFO] Transferred: {src_file.name}\n")
+
+            logger.info(f"[STUB-SCP] Transfer completed: {transferred_count} files")
+
+            if output_callback:
+                await output_callback(f"[SUCCESS] Transfer completed: {transferred_count} files\n")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"[STUB-SCP] Filesystem transfer error: {e}")
+            raise SSHSCPException(
+                transfer_name=scp_config.name,
+                detail=f"Filesystem transfer failed: {str(e)}",
+                error_code=ErrorCode.SSH_SCP_TRANSFER_FAILED,
+                original_exception=e
+            )
+
+    async def _transfer_via_scp(
+        self,
+        scp_config: SCPTransferConfig,
+        output_callback: Optional[Callable[[str], Awaitable[None]]] = None
+    ) -> bool:
+        """
+        운영 환경: SCP를 사용하여 파일 전송
+        """
+        try:
             # 소스 및 대상 서버 설정 가져오기
             src_server_config = get_ssh_config(scp_config.src_server)
             dst_server_config = get_ssh_config(scp_config.dst_server)
@@ -348,7 +471,7 @@ class StubSSHService(BaseSSHService):
                 "scp"
             ] + scp_opts + [src_url, dst_url]
 
-            logger.info(f"[STUB-SCP] Executing SCP command")
+            logger.info(f"[STUB-SCP] Executing SCP command: {' '.join(cmd)}")
 
             # 비동기 프로세스 실행
             process = await asyncio.create_subprocess_exec(
@@ -373,12 +496,12 @@ class StubSSHService(BaseSSHService):
             await process.wait()
 
             if process.returncode == 0:
-                logger.info(f"[STUB-SCP] Transfer completed successfully")
+                logger.info("[STUB-SCP] Transfer completed successfully")
                 return True
             else:
                 logger.error(f"[STUB-SCP] Transfer failed with exit code {process.returncode}")
                 raise SSHSCPException(
-                    transfer_name=transfer_name,
+                    transfer_name=scp_config.name,
                     src=src_url,
                     dst=dst_url,
                     detail=f"Transfer failed with exit code {process.returncode}",
@@ -386,9 +509,9 @@ class StubSSHService(BaseSSHService):
                 )
 
         except FileNotFoundError as e:
-            logger.error(f"[STUB-SCP] sshpass or scp command not found")
+            logger.error("[STUB-SCP] sshpass or scp command not found")
             raise SSHSCPException(
-                transfer_name=transfer_name,
+                transfer_name=scp_config.name,
                 detail="sshpass or scp command not found. Please install sshpass on the server.",
                 error_code=ErrorCode.SSH_SCP_COMMAND_NOT_FOUND,
                 original_exception=e
@@ -399,7 +522,7 @@ class StubSSHService(BaseSSHService):
         except Exception as e:
             logger.error(f"[STUB-SCP] Error during transfer: {e}")
             raise SSHSCPException(
-                transfer_name=transfer_name,
+                transfer_name=scp_config.name,
                 detail=f"Unexpected error: {str(e)}",
                 error_code=ErrorCode.SSH_SCP_TRANSFER_FAILED,
                 original_exception=e

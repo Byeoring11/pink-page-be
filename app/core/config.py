@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     MDWAP1P_IP: str = Field(...)
     MYPAP1D_IP: str = Field(...)
 
+    # SSH 포트 설정 (기본값: 22, 개발 환경에서는 Docker 포트 사용)
+    MDWAP1P_PORT: int = Field(default=22)
+    MYPAP1D_PORT: int = Field(default=22)
+
     # 환경별 설정값 조정
     def configure_for_environment(self):
         if self.ENV == "production":

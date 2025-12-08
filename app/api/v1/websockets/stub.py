@@ -7,12 +7,16 @@ from app.core.exceptions import (
     StubSessionAlreadyActiveException,
     StubSessionNotActiveException,
     StubSessionPermissionDeniedException,
-    StubResourceLockedException,
     StubTransferFailedException,
+    StubTaskAlreadyRunningException,
+    StubTaskNotFoundException,
+    StubTaskCancellationTimeoutException,
+    StubTaskCancellationFailedException,
+    StubTaskCleanupFailedException,
     WSBroadcastException,
 )
-import uuid
 import asyncio
+import uuid
 
 
 # 전역 인스턴스
@@ -59,8 +63,7 @@ class StubWebSocketController:
 
     def __init__(self):
         self.ssh_services = {}  # connection_id -> StubSSHService
-        self.is_locked = False  # SSH 작업 점유 여부
-        self.lock_owner_id = None  # 현재 점유 중인 connection_id
+        self.ssh_tasks = {}  # connection_id -> asyncio.Task (실행 중인 SSH 작업)
         self.session_active = False  # 세션 활성화 여부
         self.session_owner_id = None  # 세션 소유자 connection_id
 
@@ -90,13 +93,6 @@ class StubWebSocketController:
         self.session_active = True
         self.session_owner_id = connection_id
         logger.info(f"[STUB] Session started by {connection_id}")
-
-        # 클라이언트에게 세션 시작 응답
-        await ws_manager.send_json(connection_id, {
-            "type": "session_started",
-            "message": "Session started successfully",
-            "session_owner": connection_id
-        })
 
         # 모든 클라이언트에게 세션 시작 브로드캐스트
         await ws_manager.broadcast_json({
@@ -131,23 +127,55 @@ class StubWebSocketController:
             })
             return
 
+        # 실행 중인 모든 SSH Task 취소
+        if connection_id in self.ssh_tasks:
+            task = self.ssh_tasks[connection_id]
+            if not task.done():
+                logger.info(f"[STUB] Cancelling SSH task for connection: {connection_id}")
+                task.cancel()
+                try:
+                    # Task 취소 완료 대기 (최대 5초 타임아웃)
+                    await asyncio.wait_for(task, timeout=5.0)
+                except asyncio.CancelledError:
+                    logger.info(f"[STUB] SSH task cancelled successfully for connection: {connection_id}")
+                except asyncio.TimeoutError:
+                    # Task 취소 타임아웃
+                    logger.error(f"[STUB] Task cancellation timeout for connection: {connection_id}")
+                    exc = StubTaskCancellationTimeoutException(
+                        connection_id=connection_id,
+                        timeout_seconds=5.0
+                    )
+                    await ws_manager.send_json(connection_id, {
+                        "type": "error",
+                        "message": exc.error_code.message,
+                        "detail": exc.detail,
+                        "error_code": exc.code
+                    })
+                except Exception as e:
+                    # Task 취소 실패
+                    logger.error(f"[STUB] Task cancellation failed: {e}", exc_info=True)
+                    exc = StubTaskCancellationFailedException(
+                        connection_id=connection_id,
+                        reason=str(e)
+                    )
+                    await ws_manager.send_json(connection_id, {
+                        "type": "error",
+                        "message": exc.error_code.message,
+                        "detail": exc.detail,
+                        "error_code": exc.code
+                    })
+
         # 세션 종료
         self.session_active = False
         self.session_owner_id = None
         logger.info(f"[STUB] Session ended by {connection_id}")
-
-        # 클라이언트에게 세션 종료 응답
-        await ws_manager.send_json(connection_id, {
-            "type": "session_ended",
-            "message": "Session ended successfully"
-        })
 
         # 모든 클라이언트에게 세션 종료 브로드캐스트
         await ws_manager.broadcast_json({
             "type": "session_status",
             "session_active": False,
             "session_owner": None,
-            "message": "Session ended"
+            "message": "대응답 적재 작업 세션 점유 종료"
         })
 
     def _check_session_permission(self, connection_id: str) -> bool:
@@ -159,77 +187,27 @@ class StubWebSocketController:
             return False
         return True
 
-    async def handle_ssh_command(self, connection_id: str, data: dict):
+    async def _execute_ssh_command(self, connection_id: str, data: dict):
         """
-        웹소켓 메세지 'ssh_command' 수신 시 핸들러
-        data dictionary 안에 담긴 'server'에 SSH 연결하여 인터랙티브 쉘을 통해 'command' 실행
+        SSH 명령 실제 실행 (Task로 실행됨)
         """
         try:
-            # 세션 권한 확인
-            if not self._check_session_permission(connection_id):
-                raise StubSessionPermissionDeniedException(
-                    session_owner=self.session_owner_id,
-                    requester=connection_id
-                )
-        except StubSessionPermissionDeniedException as e:
-            logger.warning(f"[STUB] {e}")
-            await ws_manager.send_json(connection_id, {
-                "type": "error",
-                "message": e.error_code.message,
-                "detail": e.detail,
-                "error_code": e.code,
-                "session_active": True,
-                "session_owner": self.session_owner_id
-            })
-            return
-
-        try:
-
             server_name = data.get("server", "")
             command = data.get("command", "")
             throttle_interval = data.get("throttle_interval", 0.1)  # 기본값 0.1초
 
             # 종료 문자열 정의
-            stop_phrase = "[SUCC] PostgreSQL load data unload Process"  # mdwap1p 서버 대응답 Shell 종료 문자열
+            if (server_name == "mdwap1p"):
+                stop_phrase = "[SUCC] PostgreSQL load data unload Process"  # mdwap1p 서버 대응답 Shell 종료 문자열
+            elif (server_name == "mypap1d"):
+                stop_phrase = "[SUCC] PostgreSQL load data unload Process"  # mypap1d 서버 대응답 Shell 종료 문자열
+
             if not all([server_name, command]):
                 await ws_manager.send_json(connection_id, {
                     "type": "error",
                     "message": "Missing required fields: server, command"
                 })
                 return
-
-            # 세션이 없는 경우에만 락 획득 시도 (세션이 있으면 이미 권한 확인됨)
-            if not self.session_active:
-                try:
-                    if self.is_locked:
-                        raise StubResourceLockedException(
-                            lock_owner=self.lock_owner_id,
-                            resource="SSH service"
-                        )
-                except StubResourceLockedException as e:
-                    logger.warning(f"[STUB] {e}")
-                    await ws_manager.send_json(connection_id, {
-                        "type": "error",
-                        "message": e.error_code.message,
-                        "detail": e.detail,
-                        "error_code": e.code,
-                        "locked": True,
-                        "lock_owner": self.lock_owner_id
-                    })
-                    return
-
-                # 락 획득 성공
-                self.is_locked = True
-                self.lock_owner_id = connection_id
-                logger.info(f"[STUB] SSH lock acquired by {connection_id}")
-
-                # 모든 클라이언트에게 작업 시작 브로드캐스트
-                await ws_manager.broadcast_json({
-                    "type": "lock_status",
-                    "locked": True,
-                    "lock_owner": connection_id,
-                    "message": f"SSH service locked by client {connection_id}"
-                })
 
             # Stub SSH Service 인스턴스 생성
             ssh_service = StubSSHService()
@@ -245,24 +223,14 @@ class StubWebSocketController:
 
             ssh_service.set_output_callback(output_callback)
 
-            # Get server configuration
-            try:
-                host, username, password = ssh_service.get_server_config(server_name)
-            except ValueError as e:
-                await ws_manager.send_json(connection_id, {
-                    "type": "error",
-                    "message": str(e)
-                })
-                return
-
             # Send connection status
             await ws_manager.send_json(connection_id, {
                 "type": "status",
-                "message": f"Connecting to {server_name}..."
+                "message": f"{server_name} 서버에 연결 중..."
             })
 
-            # Connect to SSH server
-            connected = await ssh_service.connect(host, username, password)
+            # Connect to SSH server using server name
+            connected = await ssh_service.connect_to_server(server_name)
             if not connected:
                 await ws_manager.send_json(connection_id, {
                     "type": "error",
@@ -272,7 +240,7 @@ class StubWebSocketController:
 
             await ws_manager.send_json(connection_id, {
                 "type": "status",
-                "message": "Connected! Starting interactive shell..."
+                "message": "SSH 연결 완료! 대화형 셸을 시작하는 중..."
             })
 
             # Start interactive shell with command and throttling
@@ -285,9 +253,17 @@ class StubWebSocketController:
             # Send completion status
             await ws_manager.send_json(connection_id, {
                 "type": "complete",
-                "message": "Command execution completed"
+                "message": f"커맨드 실행 완료! -> {command}"
             })
 
+        except asyncio.CancelledError:
+            # Task 취소됨 (사용자가 중지 버튼 클릭)
+            logger.info(f"[STUB] SSH command cancelled for connection: {connection_id}")
+            await ws_manager.send_json(connection_id, {
+                "type": "status",
+                "message": "작업이 사용자에 의해 중지되었습니다."
+            })
+            raise  # CancelledError는 re-raise 필요
         except Exception as e:
             logger.error(f"Error handling SSH command: {e}")
             await ws_manager.send_json(connection_id, {
@@ -296,23 +272,82 @@ class StubWebSocketController:
             })
         finally:
             # Clean up SSH service
-            if connection_id in self.ssh_services:
-                await self.ssh_services[connection_id].disconnect()
-                del self.ssh_services[connection_id]
+            try:
+                if connection_id in self.ssh_services:
+                    await self.ssh_services[connection_id].disconnect()
+                    del self.ssh_services[connection_id]
+            except Exception as cleanup_error:
+                logger.error(f"[STUB] SSH service cleanup failed: {cleanup_error}", exc_info=True)
+                exc = StubTaskCleanupFailedException(
+                    connection_id=connection_id,
+                    cleanup_operation="SSH service disconnect",
+                    detail=str(cleanup_error)
+                )
+                try:
+                    await ws_manager.send_json(connection_id, {
+                        "type": "error",
+                        "message": exc.error_code.message,
+                        "detail": exc.detail,
+                        "error_code": exc.code
+                    })
+                except Exception:
+                    # WebSocket이 이미 닫혔을 수 있음
+                    pass
 
-            # 락 해제 (세션이 없는 경우에만)
-            if not self.session_active and self.lock_owner_id == connection_id:
-                self.is_locked = False
-                self.lock_owner_id = None
-                logger.info(f"[STUB] SSH lock released by {connection_id}")
+            # Clean up task reference
+            try:
+                if connection_id in self.ssh_tasks:
+                    del self.ssh_tasks[connection_id]
+            except Exception as cleanup_error:
+                logger.error(f"[STUB] Task reference cleanup failed: {cleanup_error}", exc_info=True)
 
-                # 모든 클라이언트에게 작업 종료 브로드캐스트
-                await ws_manager.broadcast_json({
-                    "type": "lock_status",
-                    "locked": False,
-                    "lock_owner": None,
-                    "message": "SSH service is now available"
-                })
+    async def handle_ssh_command(self, connection_id: str, data: dict):
+        """
+        웹소켓 메세지 'ssh_command' 수신 시 핸들러
+        data dictionary 안에 담긴 'server'에 SSH 연결하여 인터랙티브 쉘을 통해 'command' 실행
+        """
+        try:
+            # 세션 권한 확인
+            if not self._check_session_permission(connection_id):
+                raise StubSessionPermissionDeniedException(
+                    session_owner=self.session_owner_id,
+                    requester=connection_id
+                )
+
+            # 이미 실행 중인 Task가 있는지 확인
+            if connection_id in self.ssh_tasks:
+                existing_task = self.ssh_tasks[connection_id]
+                if not existing_task.done():
+                    raise StubTaskAlreadyRunningException(
+                        connection_id=connection_id,
+                        task_id=str(id(existing_task))
+                    )
+
+        except StubSessionPermissionDeniedException as e:
+            logger.warning(f"[STUB] {e}")
+            await ws_manager.send_json(connection_id, {
+                "type": "error",
+                "message": e.error_code.message,
+                "detail": e.detail,
+                "error_code": e.code,
+                "session_active": True,
+                "session_owner": self.session_owner_id
+            })
+            return
+        except StubTaskAlreadyRunningException as e:
+            logger.warning(f"[STUB] {e}")
+            await ws_manager.send_json(connection_id, {
+                "type": "error",
+                "message": e.error_code.message,
+                "detail": e.detail,
+                "error_code": e.code
+            })
+            return
+
+        # SSH 명령을 Task로 실행
+        task = asyncio.create_task(self._execute_ssh_command(connection_id, data))
+        self.ssh_tasks[connection_id] = task
+        logger.info(f"[STUB] Created SSH task for connection: {connection_id}")
 
     async def handle_ssh_input(self, connection_id: str, data: dict):
         """
@@ -395,7 +430,7 @@ class StubWebSocketController:
             if success:
                 await ws_manager.send_json(connection_id, {
                     "type": "complete",
-                    "message": "SCP transfer completed successfully"
+                    "message": "SCP 파일 전송 성공!"
                 })
             else:
                 raise StubTransferFailedException(
@@ -424,50 +459,43 @@ class StubWebSocketController:
                 "error_code": transfer_exc.code
             })
 
-    async def handle_get_lock_status(self, connection_id: str, data: dict):
-        """
-        현재 락 상태를 조회하는 핸들러
-        """
-        await ws_manager.send_json(connection_id, {
-            "type": "lock_status",
-            "locked": self.is_locked,
-            "lock_owner": self.lock_owner_id,
-            "message": f"Locked by {self.lock_owner_id}" if self.is_locked else "Available"
-        })
-
     async def handle_disconnect(self, connection_id: str):
         """Handle WebSocket disconnect"""
+        # 실행 중인 SSH Task 취소
+        if connection_id in self.ssh_tasks:
+            task = self.ssh_tasks[connection_id]
+            if not task.done():
+                logger.info(f"[STUB] Cancelling SSH task due to disconnect: {connection_id}")
+                task.cancel()
+                try:
+                    # Task 취소 완료 대기 (최대 5초 타임아웃)
+                    await asyncio.wait_for(task, timeout=5.0)
+                except asyncio.CancelledError:
+                    logger.info(f"[STUB] SSH task cancelled on disconnect for connection: {connection_id}")
+                except asyncio.TimeoutError:
+                    # Task 취소 타임아웃 (disconnect 시에는 로그만 기록)
+                    logger.error(f"[STUB] Task cancellation timeout on disconnect for connection: {connection_id}")
+                except Exception as e:
+                    # Task 취소 실패 (disconnect 시에는 로그만 기록)
+                    logger.error(f"[STUB] Task cancellation failed on disconnect: {e}", exc_info=True)
+
         if connection_id in self.ssh_services:
             await self.ssh_services[connection_id].disconnect()
             del self.ssh_services[connection_id]
             logger.info(f"Cleaned up SSH service for connection: {connection_id}")
 
-        # 연결 해제 시 해당 클라이언트가 세션을 소유하고 있었다면 세션 및 락 해제
+        # 연결 해제 시 해당 클라이언트가 세션을 소유하고 있었다면 세션 해제
         if self.session_owner_id == connection_id:
             self.session_active = False
             self.session_owner_id = None
             logger.info(f"[STUB] Session released due to disconnect: {connection_id}")
 
-            # 모든 클라이언트에게 세션 해제 브로드캐스트
+            # 모든 클라이언트에게 세션 해제 브로드캐스트 (즉시 전송)
             await ws_manager.broadcast_json({
                 "type": "session_status",
                 "session_active": False,
                 "session_owner": None,
                 "message": "Session ended (owner disconnected)"
-            })
-
-        # 연결 해제 시 해당 클라이언트가 락을 소유하고 있었다면 락 해제
-        if self.lock_owner_id == connection_id:
-            self.is_locked = False
-            self.lock_owner_id = None
-            logger.info(f"[STUB] SSH lock released due to disconnect: {connection_id}")
-
-            # 모든 클라이언트에게 락 해제 브로드캐스트
-            await ws_manager.broadcast_json({
-                "type": "lock_status",
-                "locked": False,
-                "lock_owner": None,
-                "message": "SSH service is now available (previous owner disconnected)"
             })
 
 
@@ -486,12 +514,6 @@ async def handle_ssh_command(connection_id: str, data: dict):
 async def handle_ssh_input(connection_id: str, data: dict):
     """Handle SSH input"""
     await stub_controller.handle_ssh_input(connection_id, data)
-
-
-@ws_handler.on_message("get_lock_status")
-async def handle_get_lock_status(connection_id: str, data: dict):
-    """Handle lock status query"""
-    await stub_controller.handle_get_lock_status(connection_id, data)
 
 
 @ws_handler.on_message("start_session")
@@ -515,19 +537,13 @@ async def handle_scp_transfer(connection_id: str, data: dict):
 @ws_handler.on_connect("connect")
 async def handle_connect(connection_id: str):
     """Handle WebSocket connection"""
-    # Welcome 메시지와 함께 현재 락, 세션, 서버 health 상태 전송
+    # Welcome 메시지와 함께 현재 세션, 서버 health 상태 전송
     await ws_manager.send_json(connection_id, {
         "type": "welcome",
         "message": "Connected to Stub SSH WebSocket",
         "connection_id": connection_id,
-        "lock_status": {
-            "locked": stub_controller.is_locked,
-            "lock_owner": stub_controller.lock_owner_id
-        },
-        "session_status": {
-            "active": stub_controller.session_active,
-            "owner": stub_controller.session_owner_id
-        },
+        "session_active": stub_controller.session_active,
+        "session_owner": stub_controller.session_owner_id,
         "server_health": health_check_service.get_all_statuses_dict()
     })
 

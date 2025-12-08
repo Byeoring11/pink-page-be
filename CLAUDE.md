@@ -178,22 +178,31 @@ await service.connect(config.host, config.username, config.password)
 
 ### Resource Locking System
 
-**Dual-Lock Mechanism** (STUB domain):
-1. **Work Lock** (`is_locked`):
-   - Single operation protection
-   - Prevents concurrent SSH command execution
-   - Auto-released after operation completion
+**Session Lock** (STUB domain):
+- Multi-step workflow protection
+- Reserves SSH service for sequence of operations (e.g., SSH → SCP → SSH)
+- Explicit start/end via WebSocket messages (`start_session`, `end_session`)
+- Only session owner can perform operations while active
+- Ensures sequential execution of the 3-step workflow as one atomic unit
 
-2. **Session Lock** (`session_active`):
-   - Multi-step workflow protection
-   - Reserves SSH service for sequence of operations (e.g., SSH → SCP → SSH)
-   - Explicit start/end via WebSocket messages (`start_session`, `end_session`)
-   - Only session owner can perform operations while active
+**asyncio Task Management** (NEW):
+- All SSH operations run as managed asyncio Tasks
+- Controller maintains `ssh_tasks` dictionary: `connection_id -> asyncio.Task`
+- Tasks can be cancelled immediately via `task.cancel()`
+- Graceful cancellation with `asyncio.CancelledError` handling
+- Immediate termination on user stop or disconnect
+- No polling or flag checking required - native Python async cancellation
+- Comprehensive exception handling for Task lifecycle:
+  - `StubTaskAlreadyRunningException` (50010): Prevents duplicate tasks for same connection
+  - `StubTaskNotFoundException` (50011): Handles attempts to cancel non-existent tasks
+  - `StubTaskCancellationTimeoutException` (50012): 5-second timeout for task cancellation
+  - `StubTaskCancellationFailedException` (50013): Unexpected cancellation failures
+  - `StubTaskCleanupFailedException` (50014): SSH service cleanup errors
 
 **WebSocket Message Types**:
 - `start_session`: Acquire session lock for multi-step workflow
-- `end_session`: Release session lock
-- `ssh_command`: Execute interactive shell command
+- `end_session`: Release session lock and cancel all active tasks
+- `ssh_command`: Execute interactive shell command (requires session lock, runs as Task)
 - `scp_transfer`: Transfer files between servers (requires session lock)
 
 ### API Routing
@@ -208,10 +217,6 @@ await service.connect(config.host, config.username, config.password)
   "type": "welcome",
   "message": "Connected to Stub SSH WebSocket",
   "connection_id": "uuid-generated-id",
-  "lock_status": {
-    "locked": false,
-    "lock_owner": null
-  },
   "session_status": {
     "active": false,
     "owner": null
@@ -265,7 +270,11 @@ await service.connect(config.host, config.username, config.password)
   - 33XXX: Broadcast errors
 - **4XXX**: Database errors
 - **5XXX**: Business logic errors
-  - 50XXX: STUB domain (sessions, locks, transfers)
+  - 50XXX: STUB domain (sessions, locks, transfers, tasks)
+    - 50004-50007: Session management
+    - 50008: Resource locking
+    - 50009: File transfers
+    - 50010-50014: Task management
   - 51XXX: BMX4 domain
   - 52XXX: BMX5 domain
   - 53XXX: DIFF domain
@@ -342,10 +351,9 @@ await ssh_service.scp_transfer(
    - Connection ID included in welcome message
 
 6. **Resource Protection**:
-   - Work lock for single operations
    - Session lock for multi-step workflows
    - Only session owner can perform operations during active session
-   - Lock status broadcast to all clients in real-time
+   - Session status broadcast to all clients in real-time
 
 7. **Health Monitoring**:
    - Background service checks all configured servers every 30 seconds
@@ -359,3 +367,20 @@ await ssh_service.scp_transfer(
    - Callback errors don't stop monitoring
    - Broadcast failures are isolated and logged
    - All exceptions include context and original error tracking
+
+9. **Task-Based Operation Control** (NEW):
+   - SSH operations executed as asyncio Tasks for cancellability
+   - `_execute_ssh_command()` contains actual SSH logic
+   - `handle_ssh_command()` creates and registers Task
+   - Tasks cancelled on `end_session` or disconnect
+   - `CancelledError` caught in both controller and SSH service
+   - Pattern: Create Task → Register → Execute → Cancel on demand → Cleanup
+   - Ensures immediate response to user stop actions without race conditions
+   - **Exception Safety**:
+     - Duplicate task prevention with `StubTaskAlreadyRunningException`
+     - 5-second cancellation timeout with `asyncio.wait_for()`
+     - Timeout errors handled via `StubTaskCancellationTimeoutException`
+     - Cancellation failures caught as `StubTaskCancellationFailedException`
+     - Cleanup errors isolated with `StubTaskCleanupFailedException`
+     - All errors logged with full context and sent to client via WebSocket
+     - Graceful degradation on disconnect (errors logged but not sent)

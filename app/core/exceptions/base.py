@@ -31,8 +31,12 @@
         |   |-- StubSessionAlreadyActiveException
         |   |-- StubSessionNotActiveException
         |   |-- StubSessionPermissionDeniedException
-        |   |-- StubResourceLockedException
-        |   +-- StubTransferFailedException
+        |   |-- StubTransferFailedException
+        |   |-- StubTaskAlreadyRunningException (Task 관리)
+        |   |-- StubTaskNotFoundException
+        |   |-- StubTaskCancellationTimeoutException
+        |   |-- StubTaskCancellationFailedException
+        |   +-- StubTaskCleanupFailedException
         |-- Bmx4Exception
         |-- Bmx5Exception
         +-- DiffException
@@ -436,23 +440,6 @@ class StubSessionPermissionDeniedException(StubException):
         super().__init__(ErrorCode.STUB_SESSION_PERMISSION_DENIED, detail=detail, context=context, **kwargs)
 
 
-class StubResourceLockedException(StubException):
-    """Resource locked by another session"""
-    def __init__(
-        self,
-        lock_owner: Optional[str] = None,
-        resource: Optional[str] = None,
-        **kwargs
-    ):
-        detail = f"Resource '{resource}' is locked by {lock_owner}" if resource and lock_owner else None
-        context = {}
-        if lock_owner:
-            context["lock_owner"] = lock_owner
-        if resource:
-            context["resource"] = resource
-        super().__init__(ErrorCode.STUB_RESOURCE_LOCKED, detail=detail, context=context, **kwargs)
-
-
 class StubTransferFailedException(StubException):
     """File transfer failed"""
     def __init__(
@@ -465,6 +452,99 @@ class StubTransferFailedException(StubException):
         if transfer_name:
             context["transfer_name"] = transfer_name
         super().__init__(ErrorCode.STUB_TRANSFER_FAILED, detail=detail, context=context, **kwargs)
+
+
+# Task Management Exceptions
+class StubTaskAlreadyRunningException(StubException):
+    """Task already running for this connection"""
+    def __init__(
+        self,
+        connection_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        detail: Optional[str] = None,
+        **kwargs
+    ):
+        if not detail and connection_id:
+            detail = f"A task is already running for connection: {connection_id}"
+        context = {}
+        if connection_id:
+            context["connection_id"] = connection_id
+        if task_id:
+            context["task_id"] = task_id
+        super().__init__(ErrorCode.STUB_TASK_ALREADY_RUNNING, detail=detail, context=context, **kwargs)
+
+
+class StubTaskNotFoundException(StubException):
+    """Task not found for cancellation or query"""
+    def __init__(
+        self,
+        connection_id: Optional[str] = None,
+        detail: Optional[str] = None,
+        **kwargs
+    ):
+        if not detail and connection_id:
+            detail = f"No task found for connection: {connection_id}"
+        context = {}
+        if connection_id:
+            context["connection_id"] = connection_id
+        super().__init__(ErrorCode.STUB_TASK_NOT_FOUND, detail=detail, context=context, **kwargs)
+
+
+class StubTaskCancellationTimeoutException(StubException):
+    """Task cancellation timed out"""
+    def __init__(
+        self,
+        connection_id: Optional[str] = None,
+        timeout_seconds: Optional[float] = None,
+        detail: Optional[str] = None,
+        **kwargs
+    ):
+        if not detail and timeout_seconds:
+            detail = f"Task cancellation timed out after {timeout_seconds} seconds"
+        context = {}
+        if connection_id:
+            context["connection_id"] = connection_id
+        if timeout_seconds:
+            context["timeout_seconds"] = timeout_seconds
+        super().__init__(ErrorCode.STUB_TASK_CANCELLATION_TIMEOUT, detail=detail, context=context, **kwargs)
+
+
+class StubTaskCancellationFailedException(StubException):
+    """Task cancellation failed unexpectedly"""
+    def __init__(
+        self,
+        connection_id: Optional[str] = None,
+        reason: Optional[str] = None,
+        detail: Optional[str] = None,
+        **kwargs
+    ):
+        if not detail and reason:
+            detail = f"Task cancellation failed: {reason}"
+        context = {}
+        if connection_id:
+            context["connection_id"] = connection_id
+        if reason:
+            context["reason"] = reason
+        super().__init__(ErrorCode.STUB_TASK_CANCELLATION_FAILED, detail=detail, context=context, **kwargs)
+
+
+class StubTaskCleanupFailedException(StubException):
+    """Task cleanup after completion or cancellation failed"""
+    def __init__(
+        self,
+        connection_id: Optional[str] = None,
+        cleanup_operation: Optional[str] = None,
+        detail: Optional[str] = None,
+        **kwargs
+    ):
+        if not detail and cleanup_operation:
+            detail = f"Task cleanup failed during: {cleanup_operation}"
+        context = {}
+        if connection_id:
+            context["connection_id"] = connection_id
+        if cleanup_operation:
+            context["cleanup_operation"] = cleanup_operation
+        super().__init__(ErrorCode.STUB_TASK_CLEANUP_FAILED, detail=detail, context=context, **kwargs)
 
 
 # BMX4 Domain Exceptions

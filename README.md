@@ -5,6 +5,7 @@ FastAPI 기반의 SSH 원격 서버 제어 및 실시간 WebSocket 통신을 제
 ## 주요 기능
 
 - **WebSocket 기반 실시간 SSH 제어**: 브라우저에서 원격 서버 터미널 조작
+- **asyncio Task 기반 작업 관리**: SSH 작업을 Task로 실행하여 즉시 취소 가능
 - **자동 서버 Health Check**: 30초마다 SSH 서버 상태 모니터링 및 실시간 알림
 - **세션 기반 리소스 락**: 다단계 작업(SSH → SCP → SSH) 시 독점 사용 보장
 - **SCP 파일 전송**: 서버 간 파일 전송 자동화
@@ -80,10 +81,6 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 {
   "type": "welcome",
   "connection_id": "550e8400-e29b-41d4-a716-446655440000",
-  "lock_status": {
-    "locked": false,
-    "lock_owner": null
-  },
   "session_status": {
     "active": false,
     "owner": null
@@ -152,7 +149,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
   "session_owner": "550e8400-e29b-41d4-a716-446655440000"
 }
 
-// 세션 종료
+// 세션 종료 (실행 중인 모든 SSH Task도 자동 취소됨)
 {
   "type": "end_session"
 }
@@ -163,6 +160,8 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
   "message": "Session ended successfully"
 }
 ```
+
+**Note**: `end_session` 메시지를 보내면 실행 중인 모든 SSH 작업이 즉시 취소됩니다. `asyncio.Task.cancel()`을 통해 작업이 중단되며, `CancelledError`가 발생하여 정상적으로 정리됩니다.
 
 ##### 3. SCP 파일 전송
 
@@ -299,6 +298,11 @@ ws.onmessage = (event) => {
   - 50005: 활성 세션 없음
   - 50006: 세션 권한 없음
   - 50008: 리소스 잠금됨
+  - 50010: Task 이미 실행 중
+  - 50011: Task를 찾을 수 없음
+  - 50012: Task 취소 타임아웃
+  - 50013: Task 취소 실패
+  - 50014: Task 정리 실패
 
 ### 에러 응답 예제
 

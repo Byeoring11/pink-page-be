@@ -119,8 +119,15 @@ class ErrorCode(Enum):
     STUB_SESSION_NOT_ACTIVE = (50005, "No active session", 400)
     STUB_SESSION_PERMISSION_DENIED = (50006, "Session permission denied", 403)
     STUB_SESSION_OWNER_MISMATCH = (50007, "Session owner mismatch", 403)
-    STUB_RESOURCE_LOCKED = (50008, "Resource is locked by another session", 423)
+    STUB_RESOURCE_LOCKED = (50008, "Resource is locked", 423)
     STUB_TRANSFER_FAILED = (50009, "File transfer failed", 500)
+
+    # Task Management Errors
+    STUB_TASK_ALREADY_RUNNING = (50010, "Task already running", 409)
+    STUB_TASK_NOT_FOUND = (50011, "Task not found", 404)
+    STUB_TASK_CANCELLATION_TIMEOUT = (50012, "Task cancellation timeout", 504)
+    STUB_TASK_CANCELLATION_FAILED = (50013, "Task cancellation failed", 500)
+    STUB_TASK_CLEANUP_FAILED = (50014, "Task cleanup failed", 500)
 
     # BMX4 Domain
     BMX4_OPERATION_FAILED = (51000, "BMX4 operation failed", 500)
