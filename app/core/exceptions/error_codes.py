@@ -129,6 +129,18 @@ class ErrorCode(Enum):
     STUB_TASK_CANCELLATION_FAILED = (50013, "Task cancellation failed", 500)
     STUB_TASK_CLEANUP_FAILED = (50014, "Task cleanup failed", 500)
 
+    # Load History Errors
+    STUB_LOAD_HISTORY_DB_INIT_FAILED = (50015, "Load history database initialization failed", 500)
+    STUB_LOAD_HISTORY_CREATE_FAILED = (50016, "Load history creation failed", 500)
+    STUB_LOAD_HISTORY_QUERY_FAILED = (50017, "Load history query failed", 500)
+    STUB_LOAD_HISTORY_BATCH_NOT_FOUND = (50018, "Batch history not found", 404)
+    STUB_LOAD_HISTORY_CUSTOMER_QUERY_FAILED = (50019, "Customer history query failed", 500)
+    STUB_LOAD_HISTORY_DELETE_FAILED = (50020, "Load history deletion failed", 500)
+    STUB_LOAD_HISTORY_INVALID_CUSTOMER_NUMBER = (50021, "Invalid customer number format", 400)
+    STUB_LOAD_HISTORY_DUPLICATE_ENTRY = (50022, "Duplicate load history entry", 409)
+    STUB_LOAD_HISTORY_DB_CONNECTION_FAILED = (50023, "Load history database connection failed", 503)
+    STUB_LOAD_HISTORY_VALIDATION_ERROR = (50024, "Load history data validation error", 400)
+
     # BMX4 Domain
     BMX4_OPERATION_FAILED = (51000, "BMX4 operation failed", 500)
     BMX4_INVALID_REQUEST = (51001, "Invalid BMX4 request", 400)

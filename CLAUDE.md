@@ -211,6 +211,9 @@ await service.connect(config.host, config.username, config.password)
 - `/ws/v1/stub` - STUB WebSocket with server-generated connection IDs
 - Additional domain-specific WebSocket endpoints for bmx4, bmx5, diff
 
+**REST API Endpoints** (`app/api/v1/router.py`):
+- `/api/v1/stub/load-history` - Stub work history endpoints (see Work History System below)
+
 **Welcome Message** (sent on connection):
 ```json
 {
@@ -252,6 +255,93 @@ await service.connect(config.host, config.username, config.password)
 - REST API: `{"success": false, "error": {"code": 20000, "message": "...", "detail": "..."}}`
 - WebSocket: `{"type": "error", "success": false, "error": {"code": 20000, "message": "..."}}`
 
+### Work History System
+
+**Overview**:
+The Stub domain includes a complete work history recording system that tracks all data loading operations. History is stored in SQLite with one record per customer number (not per batch).
+
+**Database** (`data/stub_history.db`):
+- **Table**: `stub_load_history`
+- **Storage Pattern**: One row per customer number
+  - Example: 10 customer numbers in one batch → 10 database records
+- **Fields**:
+  - `id`: Auto-increment primary key
+  - `batch_id`: UUID identifying the batch (same for all customers in one workflow)
+  - `customer_number`: Individual customer number (9 or 10 digits)
+  - `client_ip`: Client IP address (auto-extracted from request if not provided)
+  - `connection_id`: WebSocket connection ID (optional)
+  - `execution_time_seconds`: Total workflow execution time in seconds
+  - `started_at`: Workflow start timestamp (ISO 8601)
+  - `completed_at`: Workflow completion timestamp (ISO 8601)
+  - `created_at`: Record creation timestamp
+- **Constraints**: UNIQUE(batch_id, customer_number) prevents duplicates
+- **Indexes**: Optimized for queries by batch_id, customer_number, client_ip, created_at, completed_at
+
+**Architecture**:
+```
+Service Layer: StubLoadHistoryService (app/domains/stub/services/)
+    ↓
+Schemas: Pydantic models (app/domains/stub/schemas/)
+    ↓
+REST API: Router endpoints (app/api/v1/routers/stub.py)
+```
+
+**REST API Endpoints**:
+1. **POST `/api/v1/stub/load-history`** - Create work history
+   - Request: `StubLoadHistoryCreate` (batch_id, customer_numbers[], client_ip, execution_time, timestamps)
+   - Response: `{success, message, batch_id, inserted_count}`
+   - Validation: 9/10 digit customer numbers, execution time < 24 hours
+   - Behavior: Inserts one row per customer number
+
+2. **GET `/api/v1/stub/load-history`** - List work history with filters
+   - Query params: `customer_number`, `client_ip`, `batch_id`, `limit`, `offset`
+   - Response: `{total, items[]}` with pagination
+   - Default: Returns most recent 100 records
+
+3. **GET `/api/v1/stub/load-history/batch/{batch_id}`** - Get batch summary
+   - Response: `StubLoadHistorySummary` (total_customers, execution_time, timestamps)
+   - Returns: Aggregated information for all customers in the batch
+
+4. **GET `/api/v1/stub/load-history/customer/{customer_number}`** - Get customer history
+   - Query params: `limit` (default: 10)
+   - Response: Array of `StubLoadHistoryResponse`
+   - Returns: All workflows that included this customer number
+
+5. **DELETE `/api/v1/stub/load-history/cleanup`** - Delete old records
+   - Query params: `days` (default: 90, range: 30-365)
+   - Response: `{success, deleted_count, retention_days}`
+   - Behavior: Deletes records older than specified days
+
+**Service Methods**:
+- `initialize_db()`: Creates table and indexes on app startup
+- `create_history(data)`: Inserts one row per customer number
+- `get_history_list(filters)`: Query with pagination and filtering
+- `get_batch_summary(batch_id)`: Aggregate batch statistics
+- `get_customer_history(customer_number)`: Customer-specific history
+- `delete_old_records(days)`: Cleanup old records
+
+**Initialization**:
+The database is automatically initialized on application startup in `app/main.py` lifespan events:
+```python
+history_service = StubLoadHistoryService()
+await history_service.initialize_db()
+```
+
+**Frontend Integration**:
+The frontend automatically records work history after successful workflow completion (step 3 success):
+- Generates UUID batch_id at workflow start
+- Records start timestamp
+- Calculates execution time on completion
+- Calls POST `/api/v1/stub/load-history` with all customer numbers
+- History recording failure does not affect workflow success
+
+**Production Deployment**:
+1. Database file created automatically at `data/stub_history.db`
+2. Ensure `data/` directory has write permissions
+3. Table and indexes created on first startup
+4. Consider periodic cleanup (DELETE cleanup endpoint) for disk space management
+5. Backup strategy: SQLite file can be backed up while application is running
+
 ### Exception System
 
 **Error Code Ranges**:
@@ -270,11 +360,22 @@ await service.connect(config.host, config.username, config.password)
   - 33XXX: Broadcast errors
 - **4XXX**: Database errors
 - **5XXX**: Business logic errors
-  - 50XXX: STUB domain (sessions, locks, transfers, tasks)
+  - 50XXX: STUB domain (sessions, locks, transfers, tasks, load history)
     - 50004-50007: Session management
     - 50008: Resource locking
     - 50009: File transfers
     - 50010-50014: Task management
+    - 50015-50024: Load history management
+      - 50015: Database initialization failed
+      - 50016: History creation failed
+      - 50017: History query failed
+      - 50018: Batch not found
+      - 50019: Customer history query failed
+      - 50020: History deletion failed
+      - 50021: Invalid customer number
+      - 50022: Duplicate entry
+      - 50023: Database connection failed
+      - 50024: Validation error
   - 51XXX: BMX4 domain
   - 52XXX: BMX5 domain
   - 53XXX: DIFF domain

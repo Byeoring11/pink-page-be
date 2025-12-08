@@ -36,7 +36,16 @@
         |   |-- StubTaskNotFoundException
         |   |-- StubTaskCancellationTimeoutException
         |   |-- StubTaskCancellationFailedException
-        |   +-- StubTaskCleanupFailedException
+        |   |-- StubTaskCleanupFailedException
+        |   |-- StubLoadHistoryException (작업 이력 관리)
+        |   |   |-- StubLoadHistoryDBInitException
+        |   |   |-- StubLoadHistoryCreateException
+        |   |   |-- StubLoadHistoryQueryException
+        |   |   |-- StubLoadHistoryBatchNotFoundException
+        |   |   |-- StubLoadHistoryDeleteException
+        |   |   |-- StubLoadHistoryValidationException
+        |   |   |-- StubLoadHistoryDuplicateException
+        |   |   +-- StubLoadHistoryDBConnectionException
         |-- Bmx4Exception
         |-- Bmx5Exception
         +-- DiffException
@@ -545,6 +554,177 @@ class StubTaskCleanupFailedException(StubException):
         if cleanup_operation:
             context["cleanup_operation"] = cleanup_operation
         super().__init__(ErrorCode.STUB_TASK_CLEANUP_FAILED, detail=detail, context=context, **kwargs)
+
+
+# Load History Exceptions
+class StubLoadHistoryException(StubException):
+    """Base exception for load history operations"""
+    pass
+
+
+class StubLoadHistoryDBInitException(StubLoadHistoryException):
+    """Database initialization failed"""
+    def __init__(
+        self,
+        db_path: Optional[str] = None,
+        detail: Optional[str] = None,
+        **kwargs
+    ):
+        context = {}
+        if db_path:
+            context["db_path"] = db_path
+        super().__init__(
+            ErrorCode.STUB_LOAD_HISTORY_DB_INIT_FAILED,
+            detail=detail,
+            context=context,
+            **kwargs
+        )
+
+
+class StubLoadHistoryCreateException(StubLoadHistoryException):
+    """Load history creation failed"""
+    def __init__(
+        self,
+        batch_id: Optional[str] = None,
+        customer_count: Optional[int] = None,
+        detail: Optional[str] = None,
+        **kwargs
+    ):
+        context = {}
+        if batch_id:
+            context["batch_id"] = batch_id
+        if customer_count is not None:
+            context["customer_count"] = customer_count
+        super().__init__(
+            ErrorCode.STUB_LOAD_HISTORY_CREATE_FAILED,
+            detail=detail,
+            context=context,
+            **kwargs
+        )
+
+
+class StubLoadHistoryQueryException(StubLoadHistoryException):
+    """Load history query failed"""
+    def __init__(
+        self,
+        query_type: Optional[str] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        detail: Optional[str] = None,
+        **kwargs
+    ):
+        context = {}
+        if query_type:
+            context["query_type"] = query_type
+        if filters:
+            context["filters"] = filters
+        super().__init__(
+            ErrorCode.STUB_LOAD_HISTORY_QUERY_FAILED,
+            detail=detail,
+            context=context,
+            **kwargs
+        )
+
+
+class StubLoadHistoryBatchNotFoundException(StubLoadHistoryException):
+    """Batch history not found"""
+    def __init__(
+        self,
+        batch_id: str,
+        **kwargs
+    ):
+        detail = f"No history found for batch ID: {batch_id}"
+        super().__init__(
+            ErrorCode.STUB_LOAD_HISTORY_BATCH_NOT_FOUND,
+            detail=detail,
+            context={"batch_id": batch_id},
+            **kwargs
+        )
+
+
+class StubLoadHistoryDeleteException(StubLoadHistoryException):
+    """Load history deletion failed"""
+    def __init__(
+        self,
+        retention_days: Optional[int] = None,
+        detail: Optional[str] = None,
+        **kwargs
+    ):
+        context = {}
+        if retention_days is not None:
+            context["retention_days"] = retention_days
+        super().__init__(
+            ErrorCode.STUB_LOAD_HISTORY_DELETE_FAILED,
+            detail=detail,
+            context=context,
+            **kwargs
+        )
+
+
+class StubLoadHistoryValidationException(StubLoadHistoryException):
+    """Load history data validation error"""
+    def __init__(
+        self,
+        field: Optional[str] = None,
+        value: Optional[Any] = None,
+        detail: Optional[str] = None,
+        **kwargs
+    ):
+        if not detail and field:
+            detail = f"Validation failed for field '{field}'"
+        context = {}
+        if field:
+            context["field"] = field
+        if value is not None:
+            context["value"] = str(value)[:100]  # Limit length
+        super().__init__(
+            ErrorCode.STUB_LOAD_HISTORY_VALIDATION_ERROR,
+            detail=detail,
+            context=context,
+            **kwargs
+        )
+
+
+class StubLoadHistoryDuplicateException(StubLoadHistoryException):
+    """Duplicate load history entry"""
+    def __init__(
+        self,
+        batch_id: Optional[str] = None,
+        customer_number: Optional[str] = None,
+        detail: Optional[str] = None,
+        **kwargs
+    ):
+        if not detail and batch_id and customer_number:
+            detail = f"Duplicate entry for batch '{batch_id}' and customer '{customer_number}'"
+        context = {}
+        if batch_id:
+            context["batch_id"] = batch_id
+        if customer_number:
+            context["customer_number"] = customer_number
+        super().__init__(
+            ErrorCode.STUB_LOAD_HISTORY_DUPLICATE_ENTRY,
+            detail=detail,
+            context=context,
+            **kwargs
+        )
+
+
+class StubLoadHistoryDBConnectionException(StubLoadHistoryException):
+    """Load history database connection failed"""
+    def __init__(
+        self,
+        db_path: Optional[str] = None,
+        detail: Optional[str] = None,
+        **kwargs
+    ):
+        context = {}
+        if db_path:
+            context["db_path"] = db_path
+        super().__init__(
+            ErrorCode.STUB_LOAD_HISTORY_DB_CONNECTION_FAILED,
+            detail=detail,
+            context=context,
+            **kwargs
+        )
 
 
 # BMX4 Domain Exceptions
