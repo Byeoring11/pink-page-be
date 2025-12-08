@@ -94,7 +94,7 @@ async def create_histories(
 async def get_histories(
     customer_number: Optional[str] = Query(None, description="고객번호로 필터"),
     client_ip: Optional[str] = Query(None, description="클라이언트 IP로 필터"),
-    batch_id: Optional[str] = Query(None, description="배치 ID로 필터"),
+    note: Optional[str] = Query(None, description="Note 내용으로 필터"),
     limit: int = Query(100, ge=1, le=1000, description="조회 개수 제한"),
     offset: int = Query(0, ge=0, description="오프셋"),
     service: StubLoadHistoryService = Depends(get_service),
@@ -103,14 +103,14 @@ async def get_histories(
     작업 이력 목록 조회
 
     - 필터 없이 조회 시: 최근 100건 반환
-    - 고객번호, IP, 배치 ID로 필터링 가능
+    - 고객번호, IP, Note 내용으로 필터링 가능
     - 페이징 지원 (limit/offset)
     """
     try:
         result = await service.get_histories(
             customer_number=customer_number,
             client_ip=client_ip,
-            batch_id=batch_id,
+            note=note,
             limit=limit,
             offset=offset,
         )

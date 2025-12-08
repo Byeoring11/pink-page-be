@@ -45,7 +45,7 @@ class StubLoadHistoryService:
         Returns:
             생성된 레코드 수
         """
-        # 요청을 모델로 변환
+        # 요청을 모델로 변환 (SQLAlchemy 모델)
         histories = []
         for customer_number in request.customer_numbers:
             history = StubLoadHistory(
@@ -54,8 +54,8 @@ class StubLoadHistoryService:
                 client_ip=request.client_ip,
                 connection_id=request.connection_id,
                 execution_time_seconds=request.execution_time_seconds,
-                started_at=request.started_at.isoformat(),
-                completed_at=request.completed_at.isoformat(),
+                started_at=request.started_at,  # datetime 객체 직접 전달
+                completed_at=request.completed_at,  # datetime 객체 직접 전달
             )
             histories.append(history)
 
@@ -85,7 +85,7 @@ class StubLoadHistoryService:
         self,
         customer_number: Optional[str] = None,
         client_ip: Optional[str] = None,
-        batch_id: Optional[str] = None,
+        note: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
     ) -> LoadHistoryListResponse:
@@ -95,7 +95,7 @@ class StubLoadHistoryService:
         Args:
             customer_number: 고객번호 필터
             client_ip: IP 필터
-            batch_id: 배치 ID 필터
+            note: Note 내용 필터
             limit: 조회 개수
             offset: 오프셋
 
@@ -105,7 +105,7 @@ class StubLoadHistoryService:
         histories, total = await self.repository.find_all(
             customer_number=customer_number,
             client_ip=client_ip,
-            batch_id=batch_id,
+            note=note,
             limit=limit,
             offset=offset,
         )
@@ -141,9 +141,9 @@ class StubLoadHistoryService:
             total_customers=len(histories),
             client_ip=first.client_ip,
             execution_time_seconds=first.execution_time_seconds,
-            started_at=first.started_at,
-            completed_at=first.completed_at,
-            created_at=first.created_at,
+            started_at=first.started_at.isoformat() if first.started_at else "",
+            completed_at=first.completed_at.isoformat() if first.completed_at else "",
+            created_at=first.created_at.isoformat() if first.created_at else "",
         )
 
     async def get_customer_histories(
