@@ -41,6 +41,17 @@ async def lifespan(app: FastAPI):
         # 데이터베이스 초기화 실패는 애플리케이션 시작을 중단하지 않음
         # (선택적 기능이므로)
 
+    # Patch Note 데이터베이스 초기화
+    from app.domains.patchnote.services.patch_note_service import PatchNoteService
+    try:
+        patch_note_service = PatchNoteService()
+        await patch_note_service.initialize()
+        logger.info("Patch Note 데이터베이스 초기화 완료")
+    except Exception as e:
+        logger.error(f"Patch Note 데이터베이스 초기화 실패: {e}", exc_info=True)
+        # 데이터베이스 초기화 실패는 애플리케이션 시작을 중단하지 않음
+        # (선택적 기능이므로)
+
     yield
 
     # ============ Shutdown ============

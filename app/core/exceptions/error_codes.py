@@ -153,6 +153,14 @@ class ErrorCode(Enum):
     DIFF_COMPARISON_FAILED = (53000, "Diff comparison failed", 500)
     DIFF_INVALID_INPUT = (53001, "Invalid diff input", 400)
 
+    # PATCH NOTE Domain
+    PATCH_NOTE_CREATE_FAILED = (54000, "Patch note creation failed", 500)
+    PATCH_NOTE_QUERY_FAILED = (54001, "Patch note query failed", 500)
+    PATCH_NOTE_NOT_FOUND = (54002, "Patch note not found", 404)
+    PATCH_NOTE_DELETE_FAILED = (54003, "Patch note deletion failed", 500)
+    PATCH_NOTE_VALIDATION_ERROR = (54004, "Patch note validation error", 400)
+    PATCH_NOTE_DB_CONNECTION_FAILED = (54005, "Patch note database connection failed", 503)
+
     @property
     def code(self) -> int:
         """Return error code"""

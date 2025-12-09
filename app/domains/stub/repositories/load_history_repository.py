@@ -5,6 +5,7 @@ Stub Load History Repository
 
 from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
+from zoneinfo import ZoneInfo
 from sqlalchemy import select, func, delete, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -244,7 +245,7 @@ class StubLoadHistoryRepository:
                 StubLoadHistory.id == history_id
             ).values(
                 note=note,
-                updated_at=datetime.utcnow()
+                updated_at=datetime.now(ZoneInfo("Asia/Seoul"))
             )
 
             result = await session.execute(stmt)
@@ -279,7 +280,7 @@ class StubLoadHistoryRepository:
         """
         session: AsyncSession = db_session()
         try:
-            cutoff_date = datetime.utcnow() - timedelta(days=days)
+            cutoff_date = datetime.now(ZoneInfo("Asia/Seoul")) - timedelta(days=days)
 
             stmt = delete(StubLoadHistory).where(
                 StubLoadHistory.created_at < cutoff_date

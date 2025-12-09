@@ -5,11 +5,17 @@ Stub Load History Model
 
 from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import String, Float, DateTime, Text, Index, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+
+
+def get_kst_now():
+    """한국 시간(KST) 반환"""
+    return datetime.now(ZoneInfo("Asia/Seoul"))
 
 
 class StubLoadHistory(Base):
@@ -34,8 +40,8 @@ class StubLoadHistory(Base):
     completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
 
     # 메타데이터
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, index=True)
-    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, onupdate=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=get_kst_now, index=True)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, onupdate=get_kst_now, index=True)
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # 제약 조건

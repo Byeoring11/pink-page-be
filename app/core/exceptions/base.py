@@ -787,6 +787,131 @@ class DiffInvalidInputException(DiffException):
         super().__init__(ErrorCode.DIFF_INVALID_INPUT, detail=detail, **kwargs)
 
 
+# PATCH NOTE Domain Exceptions
+class PatchNoteException(BusinessException):
+    """PATCH NOTE domain exception"""
+    pass
+
+
+class PatchNoteCreateException(PatchNoteException):
+    """Patch note creation failed"""
+    def __init__(
+        self,
+        title: Optional[str] = None,
+        detail: Optional[str] = None,
+        **kwargs
+    ):
+        context = {}
+        if title:
+            context["title"] = title
+        super().__init__(
+            ErrorCode.PATCH_NOTE_CREATE_FAILED,
+            detail=detail,
+            context=context,
+            **kwargs
+        )
+
+
+class PatchNoteQueryException(PatchNoteException):
+    """Patch note query failed"""
+    def __init__(
+        self,
+        query_type: Optional[str] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        detail: Optional[str] = None,
+        **kwargs
+    ):
+        context = {}
+        if query_type:
+            context["query_type"] = query_type
+        if filters:
+            context["filters"] = filters
+        super().__init__(
+            ErrorCode.PATCH_NOTE_QUERY_FAILED,
+            detail=detail,
+            context=context,
+            **kwargs
+        )
+
+
+class PatchNoteNotFoundException(PatchNoteException):
+    """Patch note not found"""
+    def __init__(
+        self,
+        patch_note_id: int,
+        **kwargs
+    ):
+        detail = f"No patch note found with ID: {patch_note_id}"
+        super().__init__(
+            ErrorCode.PATCH_NOTE_NOT_FOUND,
+            detail=detail,
+            context={"patch_note_id": patch_note_id},
+            **kwargs
+        )
+
+
+class PatchNoteDeleteException(PatchNoteException):
+    """Patch note deletion failed"""
+    def __init__(
+        self,
+        patch_note_id: Optional[int] = None,
+        detail: Optional[str] = None,
+        **kwargs
+    ):
+        context = {}
+        if patch_note_id is not None:
+            context["patch_note_id"] = patch_note_id
+        super().__init__(
+            ErrorCode.PATCH_NOTE_DELETE_FAILED,
+            detail=detail,
+            context=context,
+            **kwargs
+        )
+
+
+class PatchNoteValidationException(PatchNoteException):
+    """Patch note data validation error"""
+    def __init__(
+        self,
+        field: Optional[str] = None,
+        value: Optional[Any] = None,
+        detail: Optional[str] = None,
+        **kwargs
+    ):
+        if not detail and field:
+            detail = f"Validation failed for field '{field}'"
+        context = {}
+        if field:
+            context["field"] = field
+        if value is not None:
+            context["value"] = str(value)[:100]
+        super().__init__(
+            ErrorCode.PATCH_NOTE_VALIDATION_ERROR,
+            detail=detail,
+            context=context,
+            **kwargs
+        )
+
+
+class PatchNoteDBConnectionException(PatchNoteException):
+    """Patch note database connection failed"""
+    def __init__(
+        self,
+        db_path: Optional[str] = None,
+        detail: Optional[str] = None,
+        **kwargs
+    ):
+        context = {}
+        if db_path:
+            context["db_path"] = db_path
+        super().__init__(
+            ErrorCode.PATCH_NOTE_DB_CONNECTION_FAILED,
+            detail=detail,
+            context=context,
+            **kwargs
+        )
+
+
 # Helper Functions
 def create_exception_from_error_code(
     error_code: ErrorCode,
